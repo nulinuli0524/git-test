@@ -1,4 +1,4 @@
-# File: .github/workflows/build-static.yml
+# .github/workflows/build-static.yml
 name: Build Static pdf2pclm.node
 
 on:
@@ -34,7 +34,9 @@ jobs:
       - name: Download Ghostscript release if needed
         if: steps.cache-ghostscript.outputs.cache-hit != 'true'
         run: |
-          wget -q --show-progress https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10051/ghostscript-10.05.1.tar.gz -O gs.tar.gz
+          wget -q --show-progress \
+            https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10051/ghostscript-10.05.1.tar.gz \
+            -O gs.tar.gz
 
       - name: Extract and build Ghostscript
         run: |
@@ -42,8 +44,15 @@ jobs:
           cd ghostscript-10.05.1
           ./configure --disable-shared --enable-static
           make -j$(nproc)
-          LIBGS=$(find . -type f -name libgs.a | head -n1)
-          cp "$LIBGS" $GITHUB_WORKSPACE/libgs.a
+          if [ -f soobj/libgs.a ]; then
+            cp soobj/libgs.a $GITHUB_WORKSPACE/libgs.a
+          elif [ -f obj/libgs.a ]; then
+            cp obj/libgs.a $GITHUB_WORKSPACE/libgs.a
+          else
+            echo "libgs.a not found"
+            find . -type f | grep libgs.a || true
+            exit 1
+          fi
           cp -r base $GITHUB_WORKSPACE/gs-headers
 
       - name: Setup Node.js
