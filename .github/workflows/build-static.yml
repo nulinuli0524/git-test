@@ -1,4 +1,4 @@
-# .github/workflows/build-static.yml
+# File: .github/workflows/build-static.yml
 name: Build Static pdf2pclm.node
 
 on:
@@ -37,11 +37,16 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Install npm deps and build addon
+      - name: Install npm dependencies
+        run: npm install
+
+      - name: Build native addon
         run: |
-          npm install
           npx node-gyp configure
           npx node-gyp build
+
+      - name: List build output
+        run: ls -l build/Release
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
