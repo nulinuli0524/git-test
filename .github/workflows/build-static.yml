@@ -10,44 +10,51 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. 签出代码
       - name: Checkout source
         uses: actions/checkout@v4
 
+      # 2. 安装基础依赖
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential git python3 \
+            zlib1g-dev libjpeg-dev libpng-dev libfreetype6-dev
+
+      # 3. 安装 Node.js（确保版本）
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
 
-      - name: Install build dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            git \
-            zlib1g-dev libjpeg-dev libpng-dev libfreetype6-dev \
-            python3 nodejs npm
+      # 4. 安装项目依赖（包括 node-addon-api）
+      - name: Install npm dependencies
+        run: npm install
 
-      - name: Install node-gyp and node-addon-api
-        run: |
-          npm install -g node-gyp
-          npm install
-          npm install node-addon-api
+      # 5. 调试：打印 napi include 路径，确保正确
+      - name: Debug: Show napi include path
+        run: node -p "require('node-addon-api').include"
 
-      - name: Build Ghostscript from source (static)
+      # 6. 构建 Ghostscript 静态库
+      - name: Build Ghostscript (static)
         run: |
           git clone --depth=1 git://git.ghostscript.com/ghostpdl.git
           cd ghostpdl/ghostscript
           ./configure --disable-shared --enable-static
           make -j$(nproc)
+          # 拷贝出静态库和 headers
           cp soobj/libgs.a $GITHUB_WORKSPACE/
           cp -r base $GITHUB_WORKSPACE/gs-headers
 
-      - name: Build native N-API addon
+      # 7. 编译 N-API 插件
+      - name: Build native addon
         run: |
-          node-gyp configure
-          node-gyp build
+          npx node-gyp configure
+          npx node-gyp build
 
-      - name: Upload built addon
+      # 8. 上传产物
+      - name: Upload pdf2pclm.node
         uses: actions/upload-artifact@v4
         with:
           name: pdf2pclm-static-node
