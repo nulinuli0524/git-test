@@ -1,4 +1,3 @@
-# File: .github/workflows/build-static.yml
 name: Build Static pdf2pclm.node
 
 on:
@@ -12,7 +11,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout source
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Setup Node.js
@@ -27,13 +26,13 @@ jobs:
             build-essential git python3 \
             zlib1g-dev libjpeg-dev libpng-dev libfreetype6-dev
 
-      - name: Install npm dependencies
+      - name: Install npm deps
         run: npm install
 
-      - name: Debug napi include path
+      - name: Show napi include path
         run: node -p "require('node-addon-api').include"
 
-      - name: Build Ghostscript (static)
+      - name: Build Ghostscript
         run: |
           git clone --depth=1 git://git.ghostscript.com/ghostpdl.git
           cd ghostpdl/ghostscript
@@ -42,15 +41,15 @@ jobs:
           cp soobj/libgs.a $GITHUB_WORKSPACE/libgs.a
           cp -r base $GITHUB_WORKSPACE/gs-headers
 
-      - name: List workspace for debugging
+      - name: List workspace
         run: ls -R $GITHUB_WORKSPACE
 
-      - name: Build native addon
+      - name: Build addon
         run: |
           npx node-gyp configure
           npx node-gyp build
 
-      - name: Upload pdf2pclm.node artifact
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: pdf2pclm-static-node
