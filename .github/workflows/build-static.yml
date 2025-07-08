@@ -13,31 +13,36 @@ jobs:
       - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: Install dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential git nodejs npm ghostscript zlib1g-dev libjpeg-dev libpng-dev libfreetype6-dev
-
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '18'
 
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            git \
+            zlib1g-dev libjpeg-dev libpng-dev libfreetype6-dev \
+            python3 nodejs npm
+
       - name: Install node-gyp and node-addon-api
         run: |
           npm install -g node-gyp
           npm install
+          npm install node-addon-api
 
-      - name: Clone and build Ghostscript (static)
+      - name: Build Ghostscript from source (static)
         run: |
           git clone --depth=1 git://git.ghostscript.com/ghostpdl.git
           cd ghostpdl/ghostscript
           ./configure --disable-shared --enable-static
           make -j$(nproc)
-          cp soobj/libgs.a ../../libgs.a
-          cp -r base ../../gs-headers
+          cp soobj/libgs.a $GITHUB_WORKSPACE/
+          cp -r base $GITHUB_WORKSPACE/gs-headers
 
-      - name: Build N-API addon with static Ghostscript
+      - name: Build native N-API addon
         run: |
           node-gyp configure
           node-gyp build
