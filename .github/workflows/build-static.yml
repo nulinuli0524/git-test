@@ -22,9 +22,21 @@ jobs:
             build-essential git python3 wget \
             zlib1g-dev libjpeg-dev libpng-dev libfreetype6-dev
 
-      - name: Download and extract Ghostscript
+      - name: Cache Ghostscript tarball
+        id: cache-ghostscript
+        uses: actions/cache@v3
+        with:
+          path: gs.tar.gz
+          key: ghostscript-tarball-10.05.1
+          restore-keys: |
+            ghostscript-tarball-
+
+      - name: Download Ghostscript release if needed
+        if: steps.cache-ghostscript.outputs.cache-hit != 'true'
+        run: wget -q --show-progress https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10051/ghostscript-10.05.1.tar.gz -O gs.tar.gz
+
+      - name: Extract and build Ghostscript
         run: |
-          wget https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10051/ghostscript-10.05.1.tar.gz -O gs.tar.gz
           tar xzf gs.tar.gz
           cd ghostscript-10.05.1
           ./configure --disable-shared --enable-static
@@ -45,8 +57,8 @@ jobs:
           npx node-gyp configure
           npx node-gyp build
 
-      - name: List build output
-        run: ls -l build/Release
+      - name: Verify build output
+        run: ls -l build/Release/pdf2pclm.node
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
