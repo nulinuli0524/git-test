@@ -1,0 +1,49 @@
+name: Build Static pdf2pclm.node
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout source
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential git nodejs npm ghostscript zlib1g-dev libjpeg-dev libpng-dev libfreetype6-dev
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install node-gyp and node-addon-api
+        run: |
+          npm install -g node-gyp
+          npm install
+
+      - name: Clone and build Ghostscript (static)
+        run: |
+          git clone --depth=1 git://git.ghostscript.com/ghostpdl.git
+          cd ghostpdl/ghostscript
+          ./configure --disable-shared --enable-static
+          make -j$(nproc)
+          cp soobj/libgs.a ../../libgs.a
+          cp -r base ../../gs-headers
+
+      - name: Build N-API addon with static Ghostscript
+        run: |
+          node-gyp configure
+          node-gyp build
+
+      - name: Upload built addon
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdf2pclm-static-node
+          path: build/Release/pdf2pclm.node
