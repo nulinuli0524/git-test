@@ -14,11 +14,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: '18'
-
       - name: Install system packages
         run: |
           sudo apt-get update
@@ -26,13 +21,7 @@ jobs:
             build-essential git python3 \
             zlib1g-dev libjpeg-dev libpng-dev libfreetype6-dev
 
-      - name: Install npm deps
-        run: npm install
-
-      - name: Show napi include path
-        run: node -p "require('node-addon-api').include"
-
-      - name: Build Ghostscript
+      - name: Build Ghostscript static
         run: |
           git clone --depth=1 git://git.ghostscript.com/ghostpdl.git
           cd ghostpdl/ghostscript
@@ -41,10 +30,15 @@ jobs:
           cp soobj/libgs.a $GITHUB_WORKSPACE/libgs.a
           cp -r base $GITHUB_WORKSPACE/gs-headers
 
-      - name: List workspace
-        run: ls -R $GITHUB_WORKSPACE
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
 
-      - name: Build addon
+      - name: Install npm dependencies
+        run: npm install
+
+      - name: Build native addon
         run: |
           npx node-gyp configure
           npx node-gyp build
