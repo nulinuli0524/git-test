@@ -23,28 +23,27 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential \
-            git \
-            python3 \
-            zlib1g-dev \
-            libjpeg-dev \
-            libpng-dev \
-            libfreetype6-dev
+            build-essential git python3 \
+            zlib1g-dev libjpeg-dev libpng-dev libfreetype6-dev
 
-      - name: Install npm dependencies
+      - name: Install npm deps
         run: npm install
 
-      - name: Show napi include path
+      - name: Debug napi include path
         run: node -p "require('node-addon-api').include"
 
-      - name: Build Ghostscript static
+      - name: Build Ghostscript (static)
         run: |
           git clone --depth=1 git://git.ghostscript.com/ghostpdl.git
           cd ghostpdl/ghostscript
           ./configure --disable-shared --enable-static
           make -j$(nproc)
-          cp soobj/libgs.a $GITHUB_WORKSPACE/
+          # 拷贝静态库和 headers 回工作区根目录
+          cp soobj/libgs.a $GITHUB_WORKSPACE/libgs.a
           cp -r base $GITHUB_WORKSPACE/gs-headers
+
+      - name: List workspace files for debug
+        run: ls -R $GITHUB_WORKSPACE | sed -e 's/^/WORKSPACE: /'
 
       - name: Build native addon
         run: |
