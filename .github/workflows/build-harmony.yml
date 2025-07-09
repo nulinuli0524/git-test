@@ -19,7 +19,7 @@ jobs:
       - name: Mark workspace as safe Git directory
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      - name: Install system dependencies and cross-compilers
+      - name: Install dependencies & cross-compilers
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -36,17 +36,9 @@ jobs:
       - name: Download Ghostscript tarball
         if: steps.cache-gs.outputs.cache-hit != 'true'
         run: |
-          set -e
-          URL1="https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10051/ghostscript-10.05.1.tar.gz"
-          URL2="https://cdn.ghostscript.com/ghostpdl/gs10051/ghostscript-10.05.1.tar.gz"
-          wget --quiet --show-progress \
-            --tries=5 --retry-connrefused --waitretry=5 \
-            --timeout=30 --read-timeout=20 \
-            "$URL1" -O gs.tar.gz || \
-          wget --quiet --show-progress \
-            --tries=5 --retry-connrefused --waitretry=5 \
-            --timeout=30 --read-timeout=20 \
-            "$URL2" -O gs.tar.gz
+          wget -q --show-progress \
+            https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10051/ghostscript-10.05.1.tar.gz \
+            -O gs.tar.gz
 
       - name: Build Ghostscript and install to local prefix
         run: |
@@ -61,7 +53,18 @@ jobs:
               --prefix="$PWD/gs-install"
           make -j$(nproc)
           make install
-          GS_SO=$(find gs-install/lib -type f -name "libgs.so*" | head -n1)
+
+          # locate installed lib directory
+          LIB_DIR=gs-install/lib
+          [ -d gs-install/lib64 ] && LIB_DIR=gs-install/lib64
+
+          # find and copy the shared library
+          GS_SO=$(find "$LIB_DIR" -type f -name "libgs.so*" | head -n1)
+          if [ -z "$GS_SO" ]; then
+            echo "::error:: libgs.so not found in $LIB_DIR"
+            ls -R gs-install
+            exit 1
+          fi
           cp "$GS_SO" "${{ github.workspace }}/libgs.so"
 
       - name: Build native C++ plugin
