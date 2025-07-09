@@ -19,7 +19,7 @@ jobs:
       - name: Mark workspace as safe Git directory
         run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      - name: Install system dependencies & cross-compilers
+      - name: Install system dependencies and cross-compilers
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -35,15 +35,23 @@ jobs:
 
       - name: Download Ghostscript tarball
         if: steps.cache-gs.outputs.cache-hit != 'true'
-        run: wget -q \
-          https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10051/ghostscript-10.05.1.tar.gz \
-          -O gs.tar.gz
+        run: |
+          set -e
+          URL1="https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10051/ghostscript-10.05.1.tar.gz"
+          URL2="https://cdn.ghostscript.com/ghostpdl/gs10051/ghostscript-10.05.1.tar.gz"
+          wget --quiet --show-progress \
+            --tries=5 --retry-connrefused --waitretry=5 \
+            --timeout=30 --read-timeout=20 \
+            "$URL1" -O gs.tar.gz || \
+          wget --quiet --show-progress \
+            --tries=5 --retry-connrefused --waitretry=5 \
+            --timeout=30 --read-timeout=20 \
+            "$URL2" -O gs.tar.gz
 
       - name: Build Ghostscript and install to local prefix
         run: |
           tar xzf gs.tar.gz
           cd ghostscript-10.05.1
-          
           CC=aarch64-linux-gnu-gcc \
           CXX=aarch64-linux-gnu-g++ \
             ./configure \
@@ -51,17 +59,9 @@ jobs:
               --disable-static \
               --enable-shared \
               --prefix="$PWD/gs-install"
-          
           make -j$(nproc)
           make install
-          
           GS_SO=$(find gs-install/lib -type f -name "libgs.so*" | head -n1)
-          if [ -z "$GS_SO" ]; then
-            echo "::error:: cannot find libgs.so in gs-install/lib"
-            find gs-install/lib -maxdepth 1 -type f
-            exit 1
-          fi
-          
           cp "$GS_SO" "${{ github.workspace }}/libgs.so"
 
       - name: Build native C++ plugin
@@ -75,7 +75,6 @@ jobs:
             -DGS_SHARED=ON \
             -DGS_LIB_PATH="${{ github.workspace }}/libgs.so"
           make -j$(nproc)
-          
           mkdir -p ../libs/arm64-v8a
           cp libpdf2pclm.so ../libs/arm64-v8a/
           cp "${{ github.workspace }}/libgs.so" ../libs/arm64-v8a/
@@ -83,7 +82,7 @@ jobs:
       - name: Install hap-toolkit
         run: npm install -g @ohos/hap-toolkit
 
-      - name: Build HAP package
+      - name: Build HarmonyOS HAP package
         run: |
           cd $HAP_PROJECT_DIR
           hap build -t hap -p arm64 -a arm64-v8a -o output
