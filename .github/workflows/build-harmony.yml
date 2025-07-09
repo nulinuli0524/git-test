@@ -1,5 +1,5 @@
-# File: .github/workflows/build-harmony.yml
-name: Build HarmonyOS HAP
+# File: .github/workflows/build-harmony-with-haptoolkit.yml
+name: Build HarmonyOS HAP (no DevEco CLI)
 
 on:
   push:
@@ -11,59 +11,74 @@ jobs:
   build_harmony:
     runs-on: ubuntu-latest
     env:
-      DEV_ECO_HOME: $RUNNER_TEMP/deveco
-      HAP_OUTPUT: $GITHUB_WORKSPACE/harmony-module/output
+      HAP_PROJECT_DIR: harmony-module
+      HAP_OUTPUT: ${{ github.workspace }}/harmony-module/output
 
     steps:
-      - name: Checkout source
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install system toolchain & deps
+      - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             build-essential git cmake wget unzip \
-            zlib1g-dev libjpeg-dev libpng-dev libfreetype6-dev
+            zlib1g-dev libjpeg-dev libpng-dev libfreetype6-dev \
+            nodejs npm
 
-      - name: Install DevEco CLI
+      - name: Cache Ghostscript tarball
+        id: cache-gs
+        uses: actions/cache@v3
+        with:
+          path: gs.tar.gz
+          key: ghostscript-tarball-10.05.1
+
+      - name: Download Ghostscript if cache-miss
+        if: steps.cache-gs.outputs.cache-hit != 'true'
         run: |
-          wget -q -O deveco.zip \
-            https://gitee.com/openharmony/devops/raw/master/dev-eco-cli/release/dev-eco-cli.zip
-          unzip -q deveco.zip -d "$DEV_ECO_HOME"
-          echo "$DEV_ECO_HOME/bin" >> $GITHUB_PATH
+          wget -q --show-progress \
+            https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10051/ghostscript-10.05.1.tar.gz \
+            -O gs.tar.gz
 
       - name: Build Ghostscript static (cross)
         run: |
-          wget -qO gs.tar.gz \
-            https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10051/ghostscript-10.05.1.tar.gz
           tar xzf gs.tar.gz
           cd ghostscript-10.05.1
           ./configure --host=aarch64-linux-gnu --disable-shared --enable-static
           make -j$(nproc)
           LIBGS=$(find . -name libgs.a | head -n1)
-          mkdir -p "$DEV_ECO_HOME/ndk/libs/arm64"
-          cp "$LIBGS" "$DEV_ECO_HOME/ndk/libs/arm64/"
+          mkdir -p ndk/libs/arm64
+          cp "$LIBGS" ndk/libs/arm64/libgs.a
+        working-directory: ${{ github.workspace }}
 
       - name: Build native C++ plugin (.so)
         run: |
-          cd harmony-module/cpp
+          cd $HAP_PROJECT_DIR/cpp
           mkdir -p build && cd build
           cmake .. \
-            -DCMAKE_TOOLCHAIN_FILE="$DEV_ECO_HOME/ndk/toolchain/aarch64-linux-gnu.cmake" \
+            -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/ndk/toolchain/aarch64-linux-gnu.cmake" \
             -DHOS_ARCH=arm64-v8a \
-            -DGS_LIB="$DEV_ECO_HOME/ndk/libs/arm64/libgs.a"
+            -DGS_LIB="$GITHUB_WORKSPACE/ndk/libs/arm64/libgs.a"
           make -j$(nproc)
           mkdir -p ../libs/arm64
           cp libpdf2pclm.so ../libs/arm64/
+        working-directory: ${{ github.workspace }}
+
+      - name: Install hap-toolkit
+        run: |
+          npm install -g @ohos/hap-toolkit
 
       - name: Build HarmonyOS HAP package
         run: |
-          cd harmony-module
-          dev eco build hap --arch arm64-v8a --output-dir "$HAP_OUTPUT"
-          ls -l "$HAP_OUTPUT"
+          cd $HAP_PROJECT_DIR
+          # build a .hap for arm64-v8a
+          hap build -t hap -p arm64 -a arm64-v8a -o output
+          ls -l output
+        env:
+          HAP_CLI_HOME: ${{ runner.temp }}/hap
 
       - name: Upload HAP artifact
         uses: actions/upload-artifact@v4
         with:
           name: pdf2pclm-harmony-hap
-          path: harmony-module/output/*.hap
+          path: ${{ github.workspace }}/harmony-module/output/*.hap
