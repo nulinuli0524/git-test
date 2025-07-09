@@ -55,6 +55,12 @@ jobs:
           GS_SO=$(find . -type f -name 'libgs.so*' | head -n1)
           cp "$GS_SO" "${{ github.workspace }}/libgs.so"
 
+      - name: Restore npm registry and install hap-toolkit
+        run: |
+          npm config delete registry
+          npm config set registry https://registry.npmjs.org/
+          npm install -g @ohos/hap-toolkit
+
       - name: Build native C++ plugin
         run: |
           cd $HAP_PROJECT_DIR/cpp
@@ -69,9 +75,6 @@ jobs:
           mkdir -p ../libs/arm64-v8a
           cp libpdf2pclm.so ../libs/arm64-v8a/
           cp "${{ github.workspace }}/libgs.so" ../libs/arm64-v8a/
-
-      - name: Install hap-toolkit
-        run: npm install -g @ohos/hap-toolkit
 
       - name: Build HarmonyOS HAP package
         run: |
