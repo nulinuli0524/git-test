@@ -1,4 +1,4 @@
-name: Build HarmonyOS HAP (shared Ghostscript)
+name: Build HarmonyOS HAP
 
 on:
   push:
@@ -17,10 +17,9 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Mark workspace as safe Git directory
-        run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      - name: Install system dependencies and cross-compilers
+      - name: Install system dependencies & cross-compilers
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -36,23 +35,33 @@ jobs:
 
       - name: Download Ghostscript tarball
         if: steps.cache-gs.outputs.cache-hit != 'true'
-        run: |
-          wget -q \
-            https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10051/ghostscript-10.05.1.tar.gz \
-            -O gs.tar.gz
+        run: wget -q \
+          https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10051/ghostscript-10.05.1.tar.gz \
+          -O gs.tar.gz
 
-      - name: Build Ghostscript and extract libgs.so
+      - name: Build Ghostscript and install to local prefix
         run: |
           tar xzf gs.tar.gz
           cd ghostscript-10.05.1
+          
           CC=aarch64-linux-gnu-gcc \
           CXX=aarch64-linux-gnu-g++ \
             ./configure \
               --host=aarch64-linux-gnu \
               --disable-static \
-              --enable-shared
+              --enable-shared \
+              --prefix="$PWD/gs-install"
+          
           make -j$(nproc)
-          GS_SO=$(find . -type f -name 'libgs.so*' | head -n1)
+          make install
+          
+          GS_SO=$(find gs-install/lib -type f -name "libgs.so*" | head -n1)
+          if [ -z "$GS_SO" ]; then
+            echo "::error:: cannot find libgs.so in gs-install/lib"
+            find gs-install/lib -maxdepth 1 -type f
+            exit 1
+          fi
+          
           cp "$GS_SO" "${{ github.workspace }}/libgs.so"
 
       - name: Build native C++ plugin
@@ -66,6 +75,7 @@ jobs:
             -DGS_SHARED=ON \
             -DGS_LIB_PATH="${{ github.workspace }}/libgs.so"
           make -j$(nproc)
+          
           mkdir -p ../libs/arm64-v8a
           cp libpdf2pclm.so ../libs/arm64-v8a/
           cp "${{ github.workspace }}/libgs.so" ../libs/arm64-v8a/
@@ -73,7 +83,7 @@ jobs:
       - name: Install hap-toolkit
         run: npm install -g @ohos/hap-toolkit
 
-      - name: Build HarmonyOS HAP package
+      - name: Build HAP package
         run: |
           cd $HAP_PROJECT_DIR
           hap build -t hap -p arm64 -a arm64-v8a -o output
