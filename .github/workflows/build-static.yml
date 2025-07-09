@@ -1,4 +1,4 @@
-# .github/workflows/build-static.yml
+# File: .github/workflows/build-static.yml
 name: Build Static pdf2pclm.node
 
 on:
@@ -44,15 +44,11 @@ jobs:
           cd ghostscript-10.05.1
           ./configure --disable-shared --enable-static
           make -j$(nproc)
-          if [ -f soobj/libgs.a ]; then
-            cp soobj/libgs.a $GITHUB_WORKSPACE/libgs.a
-          elif [ -f obj/libgs.a ]; then
-            cp obj/libgs.a $GITHUB_WORKSPACE/libgs.a
-          else
-            echo "libgs.a not found"
-            find . -type f | grep libgs.a || true
-            exit 1
-          fi
+          echo "=== List all .a files ==="
+          find . -type f -name '*.a'
+          LIBGS=$(find . -type f -name libgs.a | head -n1)
+          echo "=== libgs.a found at: $LIBGS ==="
+          cp "$LIBGS" $GITHUB_WORKSPACE/libgs.a
           cp -r base $GITHUB_WORKSPACE/gs-headers
 
       - name: Setup Node.js
@@ -60,13 +56,13 @@ jobs:
         with:
           node-version: '18'
 
-      - name: Install npm dependencies and build addon
+      - name: Install npm deps and build addon
         run: |
           npm install
           npx node-gyp configure
           npx node-gyp build
 
-      - name: Verify build output
+      - name: Verify .node output
         run: ls -l build/Release/pdf2pclm.node
 
       - name: Upload artifact
