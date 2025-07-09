@@ -1,4 +1,4 @@
-name: Build HarmonyOS HAP
+name: Build HarmonyOS HAP (shared Ghostscript)
 
 on:
   push:
@@ -16,10 +16,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Mark workspace as safe
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Mark workspace as safe Git directory
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      - name: Install dependencies & cross-compilers
+      - name: Install system dependencies and cross-compilers
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -31,36 +32,30 @@ jobs:
         uses: actions/cache@v3
         with:
           path: gs.tar.gz
-          key: gs-10.05.1
+          key: ghostscript-10.05.1
 
-      - name: Download Ghostscript
+      - name: Download Ghostscript tarball
         if: steps.cache-gs.outputs.cache-hit != 'true'
         run: |
           wget -q \
             https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10051/ghostscript-10.05.1.tar.gz \
             -O gs.tar.gz
 
-      - name: Build Ghostscript & extract libgs.a
+      - name: Build Ghostscript and extract libgs.so
         run: |
           tar xzf gs.tar.gz
-          pushd ghostscript-10.05.1
+          cd ghostscript-10.05.1
           CC=aarch64-linux-gnu-gcc \
           CXX=aarch64-linux-gnu-g++ \
-            ./configure --host=aarch64-linux-gnu \
-                        --enable-static \
-                        --enable-shared \
-                        --disable-rpath
+            ./configure \
+              --host=aarch64-linux-gnu \
+              --disable-static \
+              --enable-shared
           make -j$(nproc)
-          GS_A=$(find . -type f -name 'libgs.a' | head -n1)
-          if [ -z "$GS_A" ]; then
-            echo "::error:: libgs.a not found"
-            find . -type f -name '*.a'
-            exit 1
-          fi
-          cp "$GS_A" "${{ github.workspace }}/libgs.a"
-          popd
+          GS_SO=$(find . -type f -name 'libgs.so*' | head -n1)
+          cp "$GS_SO" "${{ github.workspace }}/libgs.so"
 
-      - name: Build native plugin
+      - name: Build native C++ plugin
         run: |
           cd $HAP_PROJECT_DIR/cpp
           mkdir -p build && cd build
@@ -68,15 +63,17 @@ jobs:
             -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
             -DCMAKE_CXX_COMPILER=aarch64-linux-gnu-g++ \
             -DHOS_ARCH=arm64-v8a \
-            -DGS_LIB="${{ github.workspace }}/libgs.a"
+            -DGS_SHARED=ON \
+            -DGS_LIB_PATH="${{ github.workspace }}/libgs.so"
           make -j$(nproc)
-          mkdir -p ../libs/arm64
-          cp libpdf2pclm.so ../libs/arm64/
+          mkdir -p ../libs/arm64-v8a
+          cp libpdf2pclm.so ../libs/arm64-v8a/
+          cp "${{ github.workspace }}/libgs.so" ../libs/arm64-v8a/
 
       - name: Install hap-toolkit
         run: npm install -g @ohos/hap-toolkit
 
-      - name: Build HAP package
+      - name: Build HarmonyOS HAP package
         run: |
           cd $HAP_PROJECT_DIR
           hap build -t hap -p arm64 -a arm64-v8a -o output
