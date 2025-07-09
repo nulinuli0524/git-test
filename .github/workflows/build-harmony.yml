@@ -16,11 +16,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Mark workspace as safe Git directory
-        run: |
-          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Mark workspace as safe
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
 
-      - name: Install system dependencies & cross-compilers
+      - name: Install dependencies & cross-compilers
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -34,30 +33,34 @@ jobs:
           path: gs.tar.gz
           key: gs-10.05.1
 
-      - name: Download Ghostscript tarball
+      - name: Download Ghostscript
         if: steps.cache-gs.outputs.cache-hit != 'true'
         run: |
           wget -q \
             https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10051/ghostscript-10.05.1.tar.gz \
             -O gs.tar.gz
 
-      - name: Build Ghostscript and extract libgs.a
+      - name: Build Ghostscript & extract libgs.a
         run: |
           tar xzf gs.tar.gz
-          cd ghostscript-10.05.1
+          pushd ghostscript-10.05.1
           CC=aarch64-linux-gnu-gcc \
           CXX=aarch64-linux-gnu-g++ \
             ./configure --host=aarch64-linux-gnu \
-                        --disable-rpath \
                         --enable-static \
-                        --enable-shared
+                        --enable-shared \
+                        --disable-rpath
           make -j$(nproc)
-          GS_A=$(find . \
-            \( -path "./soobj/libgs.a" -o -path "./obj/libgs.a" -o -path "./lib/libgs.a" \) \
-            -type f | head -n1)
-          cp "$GS_A" ${{ github.workspace }}/libgs.a
+          GS_A=$(find . -type f -name 'libgs.a' | head -n1)
+          if [ -z "$GS_A" ]; then
+            echo "::error:: libgs.a not found"
+            find . -type f -name '*.a'
+            exit 1
+          fi
+          cp "$GS_A" "${{ github.workspace }}/libgs.a"
+          popd
 
-      - name: Build native C++ plugin
+      - name: Build native plugin
         run: |
           cd $HAP_PROJECT_DIR/cpp
           mkdir -p build && cd build
