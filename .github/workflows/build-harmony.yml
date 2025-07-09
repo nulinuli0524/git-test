@@ -16,47 +16,35 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install system deps
+      - name: Install system dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            build-essential git cmake wget unzip \
-            zlib1g-dev libjpeg-dev libpng-dev libfreetype6-dev \
-            nodejs npm
+          sudo apt-get install -y build-essential git cmake wget unzip zlib1g-dev libjpeg-dev libpng-dev libfreetype6-dev nodejs npm
 
-      - name: Cache Ghostscript tarball
-        id: cache-gs
+      - id: cache-gs
         uses: actions/cache@v3
         with:
           path: gs.tar.gz
           key: gs-10.05.1
 
-      - name: Download Ghostscript
+      - name: Download Ghostscript release
         if: steps.cache-gs.outputs.cache-hit != 'true'
-        run: |
-          wget -q \
-            https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10051/ghostscript-10.05.1.tar.gz \
-            -O gs.tar.gz
+        run: wget -q https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10051/ghostscript-10.05.1.tar.gz -O gs.tar.gz
 
-      - name: Extract and build Ghostscript
-        working-directory: ${{ github.workspace }}
+      - name: Build Ghostscript (static)
         run: |
           tar xzf gs.tar.gz
-          pushd ghostscript-10.05.1
+          cd ghostscript-10.05.1
           ./configure --enable-static --enable-shared --host=aarch64-linux-gnu
           make -j$(nproc)
           lib=$(find . -type f -name 'libgs.a' | head -n1)
-          cp "$lib" ${{ github.workspace }}/libgs.a
-          popd
+          cp "$lib" $GITHUB_WORKSPACE/libgs.a
 
-      - name: Build native C++ plugin
+      - name: Build native plugin
         run: |
           cd $HAP_PROJECT_DIR/cpp
           mkdir -p build && cd build
-          cmake .. \
-            -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/ndk/toolchain/aarch64-linux-gnu.cmake" \
-            -DHOS_ARCH=arm64-v8a \
-            -DGS_LIB="${{ github.workspace }}/libgs.a"
+          cmake .. -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/ndk/toolchain/aarch64-linux-gnu.cmake" -DHOS_ARCH=arm64-v8a -DGS_LIB="$GITHUB_WORKSPACE/libgs.a"
           make -j$(nproc)
           mkdir -p ../libs/arm64
           cp libpdf2pclm.so ../libs/arm64/
@@ -64,13 +52,13 @@ jobs:
       - name: Install hap-toolkit
         run: npm install -g @ohos/hap-toolkit
 
-      - name: Build HarmonyOS HAP package
+      - name: Build HAP package
         run: |
           cd $HAP_PROJECT_DIR
           hap build -t hap -p arm64 -a arm64-v8a -o output
 
       - name: Upload HAP artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: pdf2pclm-harmony-hap
           path: ${{ github.workspace }}/harmony-module/output/*.hap
