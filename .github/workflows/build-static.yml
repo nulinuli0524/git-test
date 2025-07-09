@@ -1,5 +1,4 @@
-# File: .github/workflows/build-static.yml
-name: Build Static pdf2pclm.node
+name: Build pdf2pclm.node with system Ghostscript
 
 on:
   push:
@@ -15,41 +14,13 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install system packages
+      - name: Install system deps
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential git python3 wget \
+            build-essential git python3 \
+            ghostscript libgs-dev \
             zlib1g-dev libjpeg-dev libpng-dev libfreetype6-dev
-
-      - name: Cache Ghostscript tarball
-        id: cache-ghostscript
-        uses: actions/cache@v3
-        with:
-          path: gs.tar.gz
-          key: ghostscript-tarball-10.05.1
-          restore-keys: |
-            ghostscript-tarball-
-
-      - name: Download Ghostscript release if needed
-        if: steps.cache-ghostscript.outputs.cache-hit != 'true'
-        run: |
-          wget -q --show-progress \
-            https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10051/ghostscript-10.05.1.tar.gz \
-            -O gs.tar.gz
-
-      - name: Extract and build Ghostscript
-        run: |
-          tar xzf gs.tar.gz
-          cd ghostscript-10.05.1
-          ./configure --disable-shared --enable-static
-          make -j$(nproc)
-          echo "=== List all .a files ==="
-          find . -type f -name '*.a'
-          LIBGS=$(find . -type f -name libgs.a | head -n1)
-          echo "=== libgs.a found at: $LIBGS ==="
-          cp "$LIBGS" $GITHUB_WORKSPACE/libgs.a
-          cp -r base $GITHUB_WORKSPACE/gs-headers
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -62,11 +33,11 @@ jobs:
           npx node-gyp configure
           npx node-gyp build
 
-      - name: Verify .node output
+      - name: Verify .node file
         run: ls -l build/Release/pdf2pclm.node
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: pdf2pclm-static-node
+          name: pdf2pclm-node
           path: build/Release/pdf2pclm.node
