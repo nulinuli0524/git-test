@@ -2,26 +2,62 @@ name: Build HarmonyOS HAP
 
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   workflow_dispatch:
 
 jobs:
   build_harmony:
     runs-on: ubuntu-latest
     env:
-      HAP_PROJECT_DIR: harmony-module   # adjust if your module folder name is different
-      HAP_CPP_DIR: native/cpp           # set this to the real path under HAP_PROJECT_DIR
+      HAP_PROJECT_DIR: harmony-module
       HAP_OUTPUT: ${{ github.workspace }}/harmony-module/output
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Debug workspace layout
-        run: ls -R ${{ github.workspace }}
+      - name: Mark workspace as safe Git directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install system dependencies and cross-compilers
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential git cmake wget unzip \
+            zlib1g-dev libjpeg-dev libpng-dev libfreetype6-dev \
+            nodejs npm gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
+
+      - id: cache-gs
+        uses: actions/cache@v3
+        with:
+          path: gs.tar.gz
+          key: ghostscript-10.05.1
+
+      - name: Download Ghostscript tarball
+        if: steps.cache-gs.outputs.cache-hit != 'true'
+        run: |
+          wget -q --show-progress \
+            https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10051/ghostscript-10.05.1.tar.gz \
+            -O gs.tar.gz
+
+      - name: Build Ghostscript and extract libgs.so
+        run: |
+          tar xzf gs.tar.gz
+          cd ghostscript-10.05.1
+          CC=aarch64-linux-gnu-gcc \
+          CXX=aarch64-linux-gnu-g++ \
+            ./configure \
+              --host=aarch64-linux-gnu \
+              --disable-static \
+              --enable-shared
+          make -j$(nproc)
+          make so
+          GS_SO=$(find . -type f -name 'libgs.so*' | head -n1)
+          cp "$GS_SO" "${{ github.workspace }}/libgs.so"
 
       - name: Build native C++ plugin
         run: |
-          cd ${{ github.workspace }}/${{ env.HAP_PROJECT_DIR }}/${{ env.HAP_CPP_DIR }}
+          cd $HAP_PROJECT_DIR/cpp
           mkdir -p build && cd build
           cmake .. \
             -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
@@ -32,3 +68,18 @@ jobs:
           make -j$(nproc)
           mkdir -p ../libs/arm64-v8a
           cp libpdf2pclm.so ../libs/arm64-v8a/
+          cp "${{ github.workspace }}/libgs.so" ../libs/arm64-v8a/
+
+      - name: Install hap-toolkit
+        run: npm install -g @ohos/hap-toolkit
+
+      - name: Build HarmonyOS HAP package
+        run: |
+          cd $HAP_PROJECT_DIR
+          hap build -t hap -p arm64 -a arm64-v8a -o output
+
+      - name: Upload HAP artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pdf2pclm-harmony-hap
+          path: ${{ github.workspace }}/harmony-module/output/*.hap
