@@ -1,4 +1,4 @@
-name: Build HarmonyOS HAP (no DevEco CLI)
+name: Build HarmonyOS HAP
 
 on:
   push:
@@ -14,48 +14,49 @@ jobs:
       HAP_OUTPUT: ${{ github.workspace }}/harmony-module/output
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install system dependencies
+      - name: Install system deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential git cmake wget unzip zlib1g-dev libjpeg-dev libpng-dev libfreetype6-dev nodejs npm
+          sudo apt-get install -y \
+            build-essential git cmake wget unzip \
+            zlib1g-dev libjpeg-dev libpng-dev libfreetype6-dev \
+            nodejs npm
 
       - name: Cache Ghostscript tarball
         id: cache-gs
         uses: actions/cache@v3
         with:
           path: gs.tar.gz
-          key: ghostscript-tarball-10.05.1
+          key: gs-10.05.1
 
-      - name: Download Ghostscript if needed
+      - name: Download Ghostscript
         if: steps.cache-gs.outputs.cache-hit != 'true'
         run: |
-          wget -q --show-progress https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10051/ghostscript-10.05.1.tar.gz -O gs.tar.gz
+          wget -q \
+            https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10051/ghostscript-10.05.1.tar.gz \
+            -O gs.tar.gz
 
       - name: Extract and build Ghostscript
+        working-directory: ${{ github.workspace }}
         run: |
           tar xzf gs.tar.gz
-          cd ghostscript-10.05.1
+          pushd ghostscript-10.05.1
           ./configure --enable-static --enable-shared --host=aarch64-linux-gnu
           make -j$(nproc)
-          find . -type f -name '*.a'
-          if [ -f soobj/libgs.a ]; then
-            cp soobj/libgs.a $GITHUB_WORKSPACE/libgs.a
-          elif [ -f obj/libgs.a ]; then
-            cp obj/libgs.a $GITHUB_WORKSPACE/libgs.a
-          elif [ -f lib/libgs.a ]; then
-            cp lib/libgs.a $GITHUB_WORKSPACE/libgs.a
-          else
-            exit 1
-          fi
+          lib=$(find . -type f -name 'libgs.a' | head -n1)
+          cp "$lib" ${{ github.workspace }}/libgs.a
+          popd
 
-      - name: Build native C++ plugin (.so)
+      - name: Build native C++ plugin
         run: |
           cd $HAP_PROJECT_DIR/cpp
           mkdir -p build && cd build
-          cmake .. -DCMAKE_TOOLCHAIN_FILE="$GITHUB_WORKSPACE/ndk/toolchain/aarch64-linux-gnu.cmake" -DHOS_ARCH=arm64-v8a -DGS_LIB="$GITHUB_WORKSPACE/libgs.a"
+          cmake .. \
+            -DCMAKE_TOOLCHAIN_FILE="${{ github.workspace }}/ndk/toolchain/aarch64-linux-gnu.cmake" \
+            -DHOS_ARCH=arm64-v8a \
+            -DGS_LIB="${{ github.workspace }}/libgs.a"
           make -j$(nproc)
           mkdir -p ../libs/arm64
           cp libpdf2pclm.so ../libs/arm64/
@@ -67,10 +68,9 @@ jobs:
         run: |
           cd $HAP_PROJECT_DIR
           hap build -t hap -p arm64 -a arm64-v8a -o output
-          ls -l output
 
       - name: Upload HAP artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v3
         with:
           name: pdf2pclm-harmony-hap
           path: ${{ github.workspace }}/harmony-module/output/*.hap
