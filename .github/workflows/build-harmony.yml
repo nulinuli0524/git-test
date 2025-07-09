@@ -30,23 +30,38 @@ jobs:
           path: gs.tar.gz
           key: gs-10.05.1
 
-      - name: Download Ghostscript
+      - name: Download Ghostscript tarball
         if: steps.cache-gs.outputs.cache-hit != 'true'
         run: |
           wget -q \
             https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10051/ghostscript-10.05.1.tar.gz \
             -O gs.tar.gz
 
-      - name: Build Ghostscript
+      - name: Build Ghostscript and extract libgs.a
         run: |
           tar xzf gs.tar.gz
           cd ghostscript-10.05.1
+
           CC=aarch64-linux-gnu-gcc \
           CXX=aarch64-linux-gnu-g++ \
-            ./configure --enable-static --enable-shared --host=aarch64-linux-gnu
+            ./configure --host=aarch64-linux-gnu \
+                        --disable-rpath \
+                        --enable-static \
+                        --enable-shared
+
           make -j$(nproc)
-          lib=$(find . -type f -name 'libgs.a' | head -n1)
-          cp "$lib" ${{ github.workspace }}/libgs.a
+
+          GS_A=$(find . \
+            \( -path "./soobj/libgs.a" -o -path "./obj/libgs.a" -o -path "./lib/libgs.a" \) \
+            -type f | head -n1)
+
+          if [ -z "$GS_A" ]; then
+            echo "::error::libgs.a not found in build tree"
+            find . -type f -name '*.a'
+            exit 1
+          fi
+
+          cp "$GS_A" ${{ github.workspace }}/libgs.a
 
       - name: Build native C++ plugin
         run: |
