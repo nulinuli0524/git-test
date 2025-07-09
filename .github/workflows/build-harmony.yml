@@ -11,8 +11,8 @@ jobs:
   build_harmony:
     runs-on: ubuntu-latest
     env:
-      DEV_ECO_HOME: ${{ runner.temp }}/deveco
-      HAP_OUTPUT: ${{ github.workspace }}/harmony-module/output
+      DEV_ECO_HOME: $RUNNER_TEMP/deveco
+      HAP_OUTPUT: $GITHUB_WORKSPACE/harmony-module/output
 
     steps:
       - name: Checkout source
@@ -28,44 +28,39 @@ jobs:
       - name: Install DevEco CLI
         run: |
           wget -q -O deveco.zip \
-            https://gitee.com/openharmony/devops/raw/master/deveco-cli/release/dev-eco-cli.zip
-          unzip -q deveco.zip -d $DEV_ECO_HOME
-          echo "##[add-path]$DEV_ECO_HOME/bin"
+            https://gitee.com/openharmony/devops/raw/master/dev-eco-cli/release/dev-eco-cli.zip
+          unzip -q deveco.zip -d "$DEV_ECO_HOME"
+          echo "$DEV_ECO_HOME/bin" >> $GITHUB_PATH
 
       - name: Build Ghostscript static (cross)
         run: |
-          # download official tarball with configure
           wget -qO gs.tar.gz \
             https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10051/ghostscript-10.05.1.tar.gz
           tar xzf gs.tar.gz
           cd ghostscript-10.05.1
           ./configure --host=aarch64-linux-gnu --disable-shared --enable-static
           make -j$(nproc)
-          # pick up the static lib
-          LIBGS=$(find . -name libgs.a | head -1)
-          mkdir -p $DEV_ECO_HOME/ndk/libs/arm64
-          cp "$LIBGS" $DEV_ECO_HOME/ndk/libs/arm64/
+          LIBGS=$(find . -name libgs.a | head -n1)
+          mkdir -p "$DEV_ECO_HOME/ndk/libs/arm64"
+          cp "$LIBGS" "$DEV_ECO_HOME/ndk/libs/arm64/"
 
       - name: Build native C++ plugin (.so)
         run: |
           cd harmony-module/cpp
           mkdir -p build && cd build
           cmake .. \
-            -DCMAKE_TOOLCHAIN_FILE=$DEV_ECO_HOME/ndk/toolchain/aarch64-linux-gnu.cmake \
+            -DCMAKE_TOOLCHAIN_FILE="$DEV_ECO_HOME/ndk/toolchain/aarch64-linux-gnu.cmake" \
             -DHOS_ARCH=arm64-v8a \
-            -DGS_LIB=$DEV_ECO_HOME/ndk/libs/arm64/libgs.a
+            -DGS_LIB="$DEV_ECO_HOME/ndk/libs/arm64/libgs.a"
           make -j$(nproc)
-          # 将生成的 libpdf2pclm.so 放到 HAP 约定目录
           mkdir -p ../libs/arm64
           cp libpdf2pclm.so ../libs/arm64/
 
       - name: Build HarmonyOS HAP package
         run: |
           cd harmony-module
-          # 执行 HAP 打包，指定 arch 包含 arm64-v8a
-          dev eco build hap --arch arm64-v8a
-          # 输出目录为 harmony-module/output/*.hap
-          ls -l output
+          dev eco build hap --arch arm64-v8a --output-dir "$HAP_OUTPUT"
+          ls -l "$HAP_OUTPUT"
 
       - name: Upload HAP artifact
         uses: actions/upload-artifact@v4
