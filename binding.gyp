@@ -6,22 +6,20 @@
       "include_dirs": [
         "<!(node -p \"require('node-addon-api').include\")",
         "node_modules/node-addon-api",
-        "gs-headers"
+        "/usr/include/ghostscript"
       ],
       "dependencies": [
         "<!(node -p \"require('node-addon-api').gyp\")"
       ],
       "libraries": [
-        "<!(pwd)/libgs.a",
+        "-lgs",
         "-lpthread",
         "-lm",
         "-lz",
         "-ljpeg",
         "-lfreetype"
       ],
-      "defines": [
-        "NAPI_DISABLE_CPP_EXCEPTIONS"
-      ]
+      "defines": [ "NAPI_DISABLE_CPP_EXCEPTIONS" ]
     }
   ]
 }
