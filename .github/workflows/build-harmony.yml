@@ -76,6 +76,7 @@ jobs:
           tar czf ../pdf2pclm.har \
             manifest.json \
             build.json \
+            oh-package.json5 \
             cpp/libs
 
       - name: Upload HAR artifact
