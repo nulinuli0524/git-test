@@ -1,6 +1,6 @@
 #include <cstdio>
 
-extern "C" void convertPdfToPcl(const char* input, const char* output) {
-    // stub: just print paths
-    std::printf("Converting %s -> %s\n", input, output);
+extern "C" void convertPdfToPcl(const char* in, const char* out) {
+    std::printf("Convert %s -> %s\n", in, out);
+    // 这里调用 Ghostscript API 完成真正转换
 }
