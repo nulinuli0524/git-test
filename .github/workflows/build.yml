@@ -1,0 +1,49 @@
+name: CI: Build & Test libgs_napi.so
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake libgs-dev ghostscript
+
+      - name: Build libgs_napi.so
+        working-directory: native
+        run: |
+          mkdir -p build
+          cd build
+          cmake .. -DCMAKE_BUILD_TYPE=Release
+          make -j$(nproc)
+          cp libgs_napi.so $GITHUB_WORKSPACE/
+
+      - name: Copy test PDF
+        run: cp tests/test.pdf test.pdf
+
+      - name: Compile and run test
+        run: |
+          g++ tests/test_main.cpp \
+            -L native/build -lgs_napi -lgs -o test_main
+          LD_LIBRARY_PATH=./native/build:$LD_LIBRARY_PATH \
+            ./test_main test.pdf output.pclm | tee conversion.log
+          grep -q "Conversion successful" conversion.log
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gs-napi-results
+          path: |
+            libgs_napi.so
+            test.pdf
+            output.pclm
+            conversion.log
