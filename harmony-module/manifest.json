@@ -19,7 +19,7 @@
   "module": [
     {
       "name": "pdf2pclm",
-      "moduleType": "sharedLibrary",
+      "moduleType": "library",
       "version": {
         "code": 1,
         "name": "1.0.0"
