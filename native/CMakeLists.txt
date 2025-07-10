@@ -1,16 +1,15 @@
-cmake_minimum_required(VERSION 3.4.1)
+cmake_minimum_required(VERSION 3.4)
 project(gs_napi_demo)
 
-include_directories(${GS_ROOT}/include)
+# 找到系统安装的 Ghostscript 库和头文件
+find_library(GS_LIB gs REQUIRED)
+find_path(GS_INC NAMES iapi.h PATHS /usr/include/ghostscript)
 
-add_library(gs_core SHARED IMPORTED)
-set_target_properties(gs_core PROPERTIES
-  IMPORTED_LOCATION ${GS_ROOT}/lib/libgs.so
-)
+include_directories(${GS_INC})
 
 add_library(gs_napi SHARED gs_napi.cpp)
-target_link_libraries(gs_napi gs_core log)
+target_link_libraries(gs_napi PRIVATE ${GS_LIB})
 
 set_target_properties(gs_napi PROPERTIES
-  LIBRARY_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/libs/${ANDROID_ABI}
+  OUTPUT_NAME "libgs_napi"
 )
