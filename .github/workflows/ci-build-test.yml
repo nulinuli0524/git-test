@@ -11,38 +11,39 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-    - name: Install dependencies
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y \
-          build-essential cmake libgs-dev ghostscript
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake libgs-dev ghostscript wget
 
-    - name: Build libgs_napi.so
-      working-directory: native
-      run: |
-        cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-        cmake --build build --parallel
-        cp build/libgs_napi.so ${{ github.workspace }}/
+      - name: Build libgs_napi.so
+        working-directory: native
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+          cp build/libgs_napi.so ${{ github.workspace }}/
 
-    - name: Compile and run test
-      run: |
-        cp tests/test.pdf test.pdf
-        g++ tests/test_main.cpp \
-          -L native/build -lgs_napi -lgs -o test_main
-        LD_LIBRARY_PATH=./native/build:$LD_LIBRARY_PATH \
-          ./test_main test.pdf output.pclm
-      env:
-        LD_LIBRARY_PATH: ${{ github.workspace }}/native/build:${LD_LIBRARY_PATH}
+      - name: Copy test PDF
+        run: cp tests/test.pdf test.pdf
 
-    - name: Upload artifacts
-      uses: actions/upload-artifact@v3
-      with:
-        name: gs-napi-results
-        path: |
-          libgs_napi.so
-          output.pclm
-          test.pdf
-          test_main
+      - name: Compile and run test
+        env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/native/build:${{ env.LD_LIBRARY_PATH }}
+        run: |
+          g++ tests/test_main.cpp \
+            -L native/build -lgs_napi -lgs -o test_main
+          ./test_main test.pdf output.pclm | tee conversion.log
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: gs-napi-results
+          path: |
+            libgs_napi.so
+            test.pdf
+            output.pclm
+            conversion.log
