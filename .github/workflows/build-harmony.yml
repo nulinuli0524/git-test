@@ -1,4 +1,4 @@
-name: Build HarmonyOS HAR
+name: Build HarmonyOS HAR (manual zip)
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build_har:
+  build_harmony:
     runs-on: ubuntu-latest
     env:
       HAP_PROJECT_DIR: harmony-module
@@ -15,7 +15,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install system dependencies
+      - name: Mark workspace as safe
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+
+      - name: Install deps & cross-compilers
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -23,7 +26,14 @@ jobs:
             zlib1g-dev libjpeg-dev libpng-dev libfreetype6-dev \
             nodejs npm gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
+      - id: cache-gs
+        uses: actions/cache@v3
+        with:
+          path: gs.tar.gz
+          key: ghostscript-10.05.1
+
       - name: Download Ghostscript tarball
+        if: steps.cache-gs.outputs.cache-hit != 'true'
         run: |
           wget -q --show-progress \
             https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10051/ghostscript-10.05.1.tar.gz \
@@ -46,7 +56,7 @@ jobs:
 
       - name: Build native C++ plugin
         run: |
-          cd $HAP_PROJECT_DIR/cpp
+          cd ${{ github.workspace }}/harmony-module/cpp
           mkdir -p build && cd build
           cmake .. \
             -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
@@ -61,16 +71,15 @@ jobs:
 
       - name: Manual HAR packaging
         run: |
-          cd $HAP_PROJECT_DIR
-          mkdir -p har-output
-          # ensure moduleType is "library" in manifest.json
+          cd ${{ github.workspace }}/harmony-module
+          # zip as pure library archive (HAR)
           zip -r ../pdf2pclm.har \
             manifest.json \
             build.json \
-            cpp/libs/arm64-v8a
+            cpp/libs
 
       - name: Upload HAR artifact
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: pdf2pclm-har
-          path: pdf2pclm.har
+          name: pdf2pclm-harmony-har
+          path: ${{ github.workspace }}/pdf2pclm.har
