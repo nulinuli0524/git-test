@@ -8,9 +8,9 @@
   module: [
     {
       name: "pdf2pclm",
-      moduleType: "sharedLibrary",
+      moduleType: "sharedLibrary",       // 一定要写 sharedLibrary
       version: { code: 1, name: "1.0.0" },
-      description: { name: "PDF→PCLM Converter" },
+      description: { name: "PDF→PCLM Native Plugin" },
       library: [
         { path: "cpp/libs/arm64-v8a/libpdf2pclm.so" },
         { path: "cpp/libs/arm64-v8a/libgs.so" }
