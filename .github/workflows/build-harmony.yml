@@ -1,4 +1,4 @@
-name: Build HarmonyOS HAP (manual zip)
+name: Build HarmonyOS HAR
 
 on:
   push:
@@ -7,7 +7,7 @@ on:
   workflow_dispatch:
 
 jobs:
-  build_harmony:
+  build_har:
     runs-on: ubuntu-latest
     env:
       HAP_PROJECT_DIR: harmony-module
@@ -15,10 +15,7 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - name: Mark workspace as safe
-        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
-
-      - name: Install deps & cross-compilers
+      - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
@@ -26,14 +23,7 @@ jobs:
             zlib1g-dev libjpeg-dev libpng-dev libfreetype6-dev \
             nodejs npm gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
 
-      - id: cache-gs
-        uses: actions/cache@v3
-        with:
-          path: gs.tar.gz
-          key: ghostscript-10.05.1
-
       - name: Download Ghostscript tarball
-        if: steps.cache-gs.outputs.cache-hit != 'true'
         run: |
           wget -q --show-progress \
             https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10051/ghostscript-10.05.1.tar.gz \
@@ -56,7 +46,7 @@ jobs:
 
       - name: Build native C++ plugin
         run: |
-          cd ${{ github.workspace }}/harmony-module/cpp
+          cd $HAP_PROJECT_DIR/cpp
           mkdir -p build && cd build
           cmake .. \
             -DCMAKE_C_COMPILER=aarch64-linux-gnu-gcc \
@@ -69,19 +59,18 @@ jobs:
           cp libpdf2pclm.so ../libs/arm64-v8a/
           cp "${{ github.workspace }}/libgs.so" ../libs/arm64-v8a/
 
-      - name: Manual HAP packaging
+      - name: Manual HAR packaging
         run: |
-          cd ${{ github.workspace }}/harmony-module
-          # create output folder
-          mkdir -p output
-          # copy module files
-          cp -r cpp/libs src manifest.json build.json output/
-          # zip into .hap
-          cd output
-          zip -r ../pdf2pclm.hap .
+          cd $HAP_PROJECT_DIR
+          mkdir -p har-output
+          # ensure moduleType is "library" in manifest.json
+          zip -r ../pdf2pclm.har \
+            manifest.json \
+            build.json \
+            cpp/libs/arm64-v8a
 
-      - name: Upload HAP artifact
-        uses: actions/upload-artifact@v4
+      - name: Upload HAR artifact
+        uses: actions/upload-artifact@v3
         with:
-          name: pdf2pclm-harmony-hap
-          path: ${{ github.workspace }}/harmony-module/pdf2pclm.hap
+          name: pdf2pclm-har
+          path: pdf2pclm.har
