@@ -72,8 +72,8 @@ jobs:
       - name: Manual HAR packaging
         run: |
           cd ${{ github.workspace }}/harmony-module
-          # zip as pure library archive (HAR)
-          zip -r ../pdf2pclm.har \
+          # tar as pure library archive (HAR)
+          tar czf ../pdf2pclm.har \
             manifest.json \
             build.json \
             cpp/libs
