@@ -1,25 +1,36 @@
 cmake_minimum_required(VERSION 3.10)
+project(gs`
+
+---
+
+## 三、`native/CMakeLists.txt`
+
+```cmake
+cmake_minimum_required(VERSION 3.10)
 project(gs_napi_demo)
 
-# 找 Ghostscript 库和头
+# Ghostscript 库和头
 find_library(GS_LIB gs REQUIRED)
-find_path(GS_INC iapi.h PATHS /usr/include/ghostscript)
+find_path(GS_INC iapi.h PATHS ${GS_ROOT}/include /usr/include/ghostscript)
 
-# 找 N-API 头
-find_path(NODE_API_DIR node_api.h
-  PATHS
-    /usr/include
-    /usr/include/node
-)
+# N-API_napi_demo)
 
-# 把头都加进来
-include_directories(
-  ${GS_INC}
-  ${NODE_API_DIR}
-)
+# Ghostscript 库和头
+find_library(GS_LIB gs REQUIRED)
+find_path(GS_INC iapi.h PATHS ${GS_ROOT}/include /usr/include/ghostscript)
+
+# N-API 头（如果需要本地测试，可安装 lib 头（如果需要本地测试，可安装 libnode-dev）
+find_path(NAPI_INC node_apinode-dev）
+find_path(NAPI_INC node_api.h PATHS /usr/include /usr/include/node)
+
+include_directories(${GS_INC} ${NAPI_INC})
+
+add_library(gs_napi SHARED gs.h PATHS /usr/include /usr/include/node)
+
+include_directories(${GS_INC} ${NAPI_INC})
 
 add_library(gs_napi SHARED gs_napi.cpp)
 target_link_libraries(gs_napi PRIVATE ${GS_LIB})
 
-# 确保输出名是 libgs_napi.so
+# 输出名强制为 libgs_napi.so
 set_target_properties(gs_napi PROPERTIES OUTPUT_NAME "gs_napi")
