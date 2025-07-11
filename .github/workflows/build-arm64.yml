@@ -1,5 +1,5 @@
-# .github/workflows/build-arm64.yml
-name: Build ARM64 SO for HarmonyOS
+# .github/workflows/build-and-upload-so.yml
+name: Build & Upload SO Artifacts
 
 on:
   push:
@@ -7,44 +7,41 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-arm64:
+  build-and-upload:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - name: Setup QEMU for ARM64
-        uses: docker/setup-qemu-action@v2
-
-      - name: Build ARM64 libs in container
+      - name: 安装构建依赖
         run: |
-          # 1. 准备 QEMU 环境
-          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential cmake libgs-dev ghostscript libnode-dev
 
-          # 2. 交叉编译 Ghostscript N-API 模块 + 拷贝 libgs.so
-          docker run --rm \
-            -v $PWD:/workspace \
-            -w /workspace/native \
-            --platform linux/arm64 \
-            ubuntu:20.04 \
-            bash -eux << 'EOF'
-              apt-get update
-              apt-get install -y \
-                build-essential \
-                cmake \
-                libgs9-dev ghostscript \
-                libnode-dev nodejs
+      - name: 构建 gs_napi.so
+        working-directory: native
+        run: |
+          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
 
-              # 编译 gs_napi.so（无需 lib 前缀，CMake 已配置）
-              cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-              cmake --build build --parallel
+      - name: 准备 libgs.so
+        run: |
+          mkdir -p entry/src/main/resources/libs/arm64-v8a
+          # 从系统路径拷贝 libgs.so
+          cp /usr/lib/x86_64-linux-gnu/libgs.so \
+             entry/src/main/resources/libs/arm64-v8a/
 
-              # 创建目标目录并拷贝
-              mkdir -p /workspace/entry/src/main/resources/libs/arm64-v8a
-              cp build/gs_napi.so \
-                 /workspace/entry/src/main/resources/libs/arm64-v8a/
+      - name: 拷贝 gs_napi.so 到资源目录
+        run: |
+          cp native/build/gs_napi.so \
+             entry/src/main/resources/libs/arm64-v8a/
 
-              # 找到系统的 libgs.so 并重命名为 libgs.so
-              GS_SYS_LIB=$(find /usr/lib/aarch64-linux-gnu -name "libgs.so*" | head -n1)
-              cp "$GS_SYS_LIB" /workspace/entry/src/main/resources/libs/arm64-v8a/libgs.so
-            EOF
+      - name: Upload SO artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: so-packages
+          path: |
+            entry/src/main/resources/libs/arm64-v8a/gs_napi.so
+            entry/src/main/resources/libs/arm64-v8a/libgs.so
