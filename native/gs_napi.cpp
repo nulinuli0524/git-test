@@ -1,5 +1,5 @@
 #include "iapi.h"
-#include <napi/native_api.h>
+#include <node_api.h>
 #include <cstdio>
 
 extern "C" int convert(const char* pdf_path, const char* pclm_path) { 
