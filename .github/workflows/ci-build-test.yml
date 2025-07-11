@@ -2,8 +2,7 @@ name: CI Build & Test libgs_napi
 
 on:
   push:
-    branches:
-      - main
+    branches: [ main ]
   workflow_dispatch:
 
 jobs:
@@ -11,7 +10,8 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
@@ -24,7 +24,12 @@ jobs:
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel
-          cp build/libgs_napi.so ${{ github.workspace }}/
+          cp build/libgs_napi.so $GITHUB_WORKSPACE/
+
+      - name: Copy system libgs.so
+        run: |
+          # 在 Ubuntu runner 上，这个路径可能略有不同，调整到你机子上实际路径
+          cp /usr/lib/x86_64-linux-gnu/libgs.so $GITHUB_WORKSPACE/
 
       - name: Copy test PDF
         run: cp tests/test.pdf test.pdf
@@ -44,6 +49,7 @@ jobs:
           name: gs-napi-results
           path: |
             libgs_napi.so
+            libgs.so
             test.pdf
             output.pclm
             conversion.log
