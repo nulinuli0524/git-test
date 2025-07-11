@@ -1,0 +1,50 @@
+# .github/workflows/build-arm64.yml
+name: Build ARM64 SO for HarmonyOS
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-arm64:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup QEMU for ARM64
+        uses: docker/setup-qemu-action@v2
+
+      - name: Build ARM64 libs in container
+        run: |
+          # 1. 准备 QEMU 环境
+          docker run --rm --privileged multiarch/qemu-user-static --reset -p yes
+
+          # 2. 交叉编译 Ghostscript N-API 模块 + 拷贝 libgs.so
+          docker run --rm \
+            -v $PWD:/workspace \
+            -w /workspace/native \
+            --platform linux/arm64 \
+            ubuntu:20.04 \
+            bash -eux << 'EOF'
+              apt-get update
+              apt-get install -y \
+                build-essential \
+                cmake \
+                libgs9-dev ghostscript \
+                libnode-dev nodejs
+
+              # 编译 gs_napi.so（无需 lib 前缀，CMake 已配置）
+              cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
+              cmake --build build --parallel
+
+              # 创建目标目录并拷贝
+              mkdir -p /workspace/entry/src/main/resources/libs/arm64-v8a
+              cp build/gs_napi.so \
+                 /workspace/entry/src/main/resources/libs/arm64-v8a/
+
+              # 找到系统的 libgs.so 并重命名为 libgs.so
+              GS_SYS_LIB=$(find /usr/lib/aarch64-linux-gnu -name "libgs.so*" | head -n1)
+              cp "$GS_SYS_LIB" /workspace/entry/src/main/resources/libs/arm64-v8a/libgs.so
+            EOF
