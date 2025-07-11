@@ -1,4 +1,5 @@
-name: CI Build libs
+# .github/workflows/build.yml
+name: Build and Upload Artifacts
 
 on:
   push:
@@ -8,6 +9,8 @@ on:
 jobs:
   build-libs:
     runs-on: ubuntu-latest
+    outputs:
+      artifact_name: libs-so
 
     steps:
       - uses: actions/checkout@v4
@@ -15,19 +18,22 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            build-essential cmake libgs-dev ghostscript libnode-dev
+          sudo apt-get install -y build-essential cmake libgs-dev ghostscript libnode-dev
 
-      - name: Build native libraries
+      - name: Build native
         working-directory: native
         run: |
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel
 
-      - name: Copy .so to entry/resources
+      - name: Collect SO files
         run: |
-          mkdir -p entry/src/main/resources/libs/arm64-v8a
-          # 如果你在 CMakeLists 指定了 PREFIX ""，直接是 gs_napi.so
-          cp native/build/gs_napi.so entry/src/main/resources/libs/arm64-v8a/
-          # Ghostscript 运行时库
-          cp /usr/lib/x86_64-linux-gnu/libgs.so entry/src/main/resources/libs/arm64-v8a/
+          mkdir -p so
+          cp native/build/gs_napi.so so/
+          cp /usr/lib/x86_64-linux-gnu/libgs.so so/
+
+      - name: Upload SO artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: ${{ steps.build-libs.outputs.artifact_name }}
+          path: so/
