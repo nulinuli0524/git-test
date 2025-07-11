@@ -17,4 +17,7 @@ include_directories(${GS_INC} ${NODE_API_INC})
 
 add_library(gs_napi SHARED gs_napi.cpp)
 target_link_libraries(gs_napi PRIVATE ${GS_LIB})
-set_target_properties(gs_napi PROPERTIES OUTPUT_NAME "gs_napi")
+set_target_properties(gs_napi PROPERTIES
+  OUTPUT_NAME "gs_napi"
+  PREFIX ""    # 不生成 lib 前缀
+)
