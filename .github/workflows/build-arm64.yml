@@ -1,27 +1,11 @@
-# .github/workflows/build-and-upload-so.yml
-name: Build & Upload SO Artifacts
-
-on:
-  push:
-    branches: [ main ]
-  workflow_dispatch:
-
-jobs:
-  build-and-upload:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-
       - name: 安装构建依赖
         run: |
           sudo apt-get update
-          # 下面一行千万别带注释，否则反斜杠不会起作用  
           sudo apt-get install -y \
             build-essential \
             cmake \
             libgs-dev \
+            ghostscript \
             libnode-dev
 
       - name: 构建 gs_napi.so
@@ -38,7 +22,6 @@ jobs:
 
       - name: 拷贝 libgs.so
         run: |
-          # 直接在系统库里找 libgs.so，CLI 的包无需安装
           cp /usr/lib/x86_64-linux-gnu/libgs.so \
              entry/src/main/resources/libs/arm64-v8a/
 
@@ -50,7 +33,6 @@ jobs:
             entry/src/main/resources/libs/arm64-v8a/gs_napi.so
             entry/src/main/resources/libs/arm64-v8a/libgs.so
 
-      - name: （可选）Smoke test gs CLI
+      - name: 验证 gs CLI 安装
         run: |
-          # 如果你想验证系统里有没有 gs
-          gs --version
+          gs --version    # 现在应该能正确输出版本号了
