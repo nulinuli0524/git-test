@@ -9,8 +9,6 @@ on:
 jobs:
   build-libs:
     runs-on: ubuntu-latest
-    outputs:
-      artifact_name: libs-so
 
     steps:
       - uses: actions/checkout@v4
@@ -18,7 +16,8 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential cmake libgs-dev ghostscript libnode-dev
+          sudo apt-get install -y \
+            build-essential cmake libgs-dev ghostscript libnode-dev
 
       - name: Build native
         working-directory: native
@@ -33,7 +32,7 @@ jobs:
           cp /usr/lib/x86_64-linux-gnu/libgs.so so/
 
       - name: Upload SO artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.build-libs.outputs.artifact_name }}
+          name: libs-so
           path: so/
