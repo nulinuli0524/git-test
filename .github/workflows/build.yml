@@ -1,4 +1,4 @@
-name: CI Build & Test libgs_napi
+name: CI Build libs
 
 on:
   push:
@@ -7,18 +7,17 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-test:
+  build-libs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential cmake libgs-dev ghostscript
+            build-essential cmake libgs-dev ghostscript libnode-dev
 
       - name: Build libgs_napi.so
         working-directory: native
@@ -27,24 +26,13 @@ jobs:
           cmake --build build --parallel
           cp build/libgs_napi.so $GITHUB_WORKSPACE
 
-      - name: Copy test PDF
-        run: |
-          cp tests/test.pdf test.pdf
-
-      - name: Compile and run test
-        env:
-          LD_LIBRARY_PATH: ${{ github.workspace }}/native/build:${{ env.LD_LIBRARY_PATH }}
-        run: |
-          g++ tests/test_main.cpp \
-            -L native/build -lgs_napi -lgs -o test_main
-          ./test_main test.pdf output.pclm | tee conversion.log
+      - name: Copy libgs.so
+        run: cp /usr/lib/x86_64-linux-gnu/libgs.so $GITHUB_WORKSPACE
 
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: gs-napi-results
+          name: libs
           path: |
             libgs_napi.so
-            test.pdf
-            output.pclm
-            conversion.log
+            libgs.so
