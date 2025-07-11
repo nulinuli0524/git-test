@@ -18,7 +18,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            build-essential cmake libgs-dev ghostscript libnode-dev
+            build-essential \
+            cmake \
+            libgs-dev      # 提供 iapi.h
+            ghostscript    # 运行时依赖
+            libnode-dev    # 提供 node_api.h
 
       - name: 构建 gs_napi.so
         working-directory: native
@@ -26,16 +30,19 @@ jobs:
           cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel
 
-      - name: 准备 libgs.so
+      - name: 准备 so 文件目录
         run: |
           mkdir -p entry/src/main/resources/libs/arm64-v8a
-          # 从系统路径拷贝 libgs.so
-          cp /usr/lib/x86_64-linux-gnu/libgs.so \
-             entry/src/main/resources/libs/arm64-v8a/
 
-      - name: 拷贝 gs_napi.so 到资源目录
+      - name: 拷贝 gs_napi.so
         run: |
           cp native/build/gs_napi.so \
+             entry/src/main/resources/libs/arm64-v8a/
+
+      - name: 拷贝 libgs.so
+        run: |
+          # 根据你的系统库路径调整
+          cp /usr/lib/x86_64-linux-gnu/libgs.so \
              entry/src/main/resources/libs/arm64-v8a/
 
       - name: Upload SO artifacts
