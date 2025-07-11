@@ -17,12 +17,12 @@ jobs:
       - name: 安装构建依赖
         run: |
           sudo apt-get update
+          # 下面一行千万别带注释，否则反斜杠不会起作用  
           sudo apt-get install -y \
             build-essential \
             cmake \
-            libgs-dev      # 提供 iapi.h
-            ghostscript    # 运行时依赖
-            libnode-dev    # 提供 node_api.h
+            libgs-dev \
+            libnode-dev
 
       - name: 构建 gs_napi.so
         working-directory: native
@@ -31,17 +31,14 @@ jobs:
           cmake --build build --parallel
 
       - name: 准备 so 文件目录
-        run: |
-          mkdir -p entry/src/main/resources/libs/arm64-v8a
+        run: mkdir -p entry/src/main/resources/libs/arm64-v8a
 
       - name: 拷贝 gs_napi.so
-        run: |
-          cp native/build/gs_napi.so \
-             entry/src/main/resources/libs/arm64-v8a/
+        run: cp native/build/gs_napi.so entry/src/main/resources/libs/arm64-v8a/
 
       - name: 拷贝 libgs.so
         run: |
-          # 根据你的系统库路径调整
+          # 直接在系统库里找 libgs.so，CLI 的包无需安装
           cp /usr/lib/x86_64-linux-gnu/libgs.so \
              entry/src/main/resources/libs/arm64-v8a/
 
@@ -52,3 +49,8 @@ jobs:
           path: |
             entry/src/main/resources/libs/arm64-v8a/gs_napi.so
             entry/src/main/resources/libs/arm64-v8a/libgs.so
+
+      - name: （可选）Smoke test gs CLI
+        run: |
+          # 如果你想验证系统里有没有 gs
+          gs --version
