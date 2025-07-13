@@ -21,20 +21,16 @@ jobs:
       run: |
         apt-get update
         apt-get install -y git cmake ninja-build build-essential \
-          autoconf automake libtool pkg-config wget tar gzip tree
+          autoconf automake libtool pkg-config wget tar gzip tree \
+          clang lld  # 确保安装clang和lld
         echo "工具安装完成: $(git --version), $(cmake --version | head -1)"
+        echo "Clang版本: $(clang --version | head -1)"
 
     # ========== 创建基础目录结构 ==========
     - name: Create directory structure
       run: |
-        # 创建完整的目录树
         mkdir -p ohos-ndk/sysroot/usr/{include,lib,bin}
-        mkdir -p ohos-ndk/llvm/bin
-        
-        # 验证目录创建
-        tree -d ohos-ndk || ls -R ohos-ndk
-        
-        # 设置环境变量
+        tree ohos-ndk || ls -R ohos-ndk
         echo "OHOS_NDK_HOME=$PWD/ohos-ndk" >> $GITHUB_ENV
         echo "PATH=$PATH:$PWD/ohos-ndk/llvm/bin" >> $GITHUB_ENV
 
@@ -43,19 +39,16 @@ jobs:
       run: |
         # 确保目录存在
         mkdir -p $OHOS_NDK_HOME/sysroot/usr/include
-        mkdir -p $OHOS_NDK_HOME/sysroot/usr/lib
         
-        # 获取鸿蒙内核头文件
+        # 获取鸿蒙内核头文件 - 使用新的路径结构
         wget -q https://gitee.com/openharmony/kernel_liteos_a/repository/archive/master.tar.gz -O kernel.tar.gz
         mkdir kernel_src
         tar -xzf kernel.tar.gz -C kernel_src --strip-components=1
         
-        # 验证内核源码结构
-        ls -lR kernel_src | head -20
-        
-        # 复制头文件 (确保目标目录存在)
-        mkdir -p $OHOS_NDK_HOME/sysroot/usr/include
-        cp -r kernel_src/kernel/include/* $OHOS_NDK_HOME/sysroot/usr/include/
+        # 复制头文件 - 根据实际目录结构调整
+        cp -r kernel_src/arch/arm64/include/* $OHOS_NDK_HOME/sysroot/usr/include/
+        cp -r kernel_src/include/* $OHOS_NDK_HOME/sysroot/usr/include/
+        echo "内核头文件已复制到: $OHOS_NDK_HOME/sysroot/usr/include"
         
         # 构建 musl libc
         wget -q https://gitee.com/openharmony/third_party_musl/repository/archive/master.tar.gz -O musl.tar.gz
@@ -63,6 +56,11 @@ jobs:
         tar -xzf musl.tar.gz -C musl_src --strip-components=1
         
         cd musl_src
+        
+        # 设置CC环境变量
+        export CC=clang
+        echo "使用的C编译器: $(which $CC)"
+        
         ./configure \
           --target=aarch64-linux-ohos \
           --prefix=$OHOS_NDK_HOME/sysroot/usr \
@@ -83,10 +81,15 @@ jobs:
           
           cd ${lib_name}_src
           mkdir build && cd build
+          
+          # 设置编译器
+          export CC=clang
+          export CXX=clang++
+          
           cmake .. \
             -DCMAKE_INSTALL_PREFIX=$OHOS_NDK_HOME/sysroot/usr \
-            -DCMAKE_C_COMPILER=clang \
-            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_C_COMPILER=$CC \
+            -DCMAKE_CXX_COMPILER=$CXX \
             -DCMAKE_SYSROOT=$OHOS_NDK_HOME/sysroot \
             -DCMAKE_C_FLAGS="--target=aarch64-linux-ohos" \
             -DCMAKE_CXX_FLAGS="--target=aarch64-linux-ohos" \
@@ -103,25 +106,10 @@ jobs:
     # ========== 构建鸿蒙工具链 ==========
     - name: Build OpenHarmony toolchain
       run: |
-        # 下载 LLVM 源码
-        wget -q https://github.com/llvm/llvm-project/archive/refs/tags/llvmorg-15.0.7.tar.gz -O llvm.tar.gz
-        mkdir llvm_src
-        tar -xzf llvm.tar.gz -C llvm_src --strip-components=1
-        
-        # 编译 Clang
-        cd llvm_src
-        mkdir build && cd build
-        cmake -G Ninja \
-          -DCMAKE_BUILD_TYPE=Release \
-          -DLLVM_TARGETS_TO_BUILD="AArch64" \
-          -DLLVM_ENABLE_PROJECTS="clang;lld" \
-          -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind" \
-          -DLLVM_DEFAULT_TARGET_TRIPLE=aarch64-linux-ohos \
-          -DCMAKE_INSTALL_PREFIX=$OHOS_NDK_HOME/llvm \
-          -DLLVM_BUILD_RUNTIME=OFF \
-          ../llvm
-        ninja install -j$(nproc)
-        cd ../..
+        # 使用预编译的LLVM工具链以节省时间
+        wget -q https://github.com/llvm/llvm-project/releases/download/llvmorg-16.0.0/clang+llvm-16.0.0-aarch64-linux-gnu.tar.xz -O llvm.tar.xz
+        mkdir -p $OHOS_NDK_HOME/llvm
+        tar -xf llvm.tar.xz -C $OHOS_NDK_HOME/llvm --strip-components=1
         
         # 创建 wrapper 脚本
         cat > $OHOS_NDK_HOME/llvm/bin/aarch64-linux-ohos-clang <<'EOF'
@@ -138,6 +126,8 @@ jobs:
     # ========== 构建 Ghostscript ==========
     - name: Build Ghostscript
       run: |
+        set -e  # 任何命令失败立即退出
+        
         # 下载 Ghostscript 源码
         wget -q https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs1003/ghostscript-10.03.0.tar.gz
         mkdir gs_src
@@ -186,6 +176,9 @@ jobs:
         # 确保输出目录存在
         mkdir -p /gs-build
         
+        # 配置前显示编译器信息
+        echo "使用的C编译器: $($OHOS_NDK_HOME/llvm/bin/aarch64-linux-ohos-clang --version)"
+        
         ./autogen.sh
         ./configure \
           --host=aarch64-linux-ohos \
@@ -204,24 +197,23 @@ jobs:
     # ========== 产物打包 ==========
     - name: Package artifacts
       run: |
-        # 确保输出目录存在
         mkdir -p artifacts/libs/arm64-v8a
         
-        # 验证libgs.so存在
-        if [ ! -f /gs-build/lib/libgs.so ]; then
-          echo "错误: libgs.so 未找到!"
-          find /gs-build -name "*.so" -print
+        # 检查并复制库文件
+        if [ -f /gs-build/lib/libgs.so ]; then
+          cp /gs-build/lib/libgs.so artifacts/libs/arm64-v8a/
+        elif [ -f /gs-build/lib/libgs.dylib ]; then
+          cp /gs-build/lib/libgs.dylib artifacts/libs/arm64-v8a/libgs.so
+        else
+          echo "##[error]未找到libgs.so文件！"
+          find /gs-build -name "*.so" -o -name "*.dylib" -print
           exit 1
         fi
-        
-        cp /gs-build/lib/libgs.so artifacts/libs/arm64-v8a/
         
         # 验证文件类型
         file artifacts/libs/arm64-v8a/libgs.so
         echo "构建时间: $(date)" > artifacts/build-info.txt
         echo "文件信息: $(file artifacts/libs/arm64-v8a/libgs.so)" >> artifacts/build-info.txt
-        echo "目录结构:" >> artifacts/build-info.txt
-        tree -L 3 ohos-ndk >> artifacts/build-info.txt || ls -R ohos-ndk >> artifacts/build-info.txt
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
