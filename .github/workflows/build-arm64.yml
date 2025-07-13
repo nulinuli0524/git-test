@@ -10,37 +10,38 @@ jobs:
   build:
     runs-on: ubuntu-latest
     container:
-      image: silkeh/clang:15  # 预装完整 LLVM 工具链
+      image: silkeh/clang:15
 
     steps:
     - name: Checkout code
       uses: actions/checkout@v4
 
-    # ========== 安装基础构建工具 ==========
+    # ========== 安装基础工具 ==========
     - name: Install essential tools
       run: |
         apt-get update
-        apt-get install -y git cmake ninja-build build-essential autoconf automake libtool pkg-config
+        apt-get install -y git cmake ninja-build build-essential \
+          autoconf automake libtool pkg-config wget tar gzip
         echo "工具安装完成: $(git --version), $(cmake --version | head -1)"
 
-    # ========== 从源码构建鸿蒙系统组件 ==========
+    # ========== 构建鸿蒙系统组件 ==========
     - name: Build OpenHarmony sysroot
       run: |
         # 创建基础目录结构
-        mkdir -p ohos-ndk/sysroot/{usr/include,usr/lib}
-        OHOS_NDK=$PWD/ohos-ndk
+        mkdir -p ohos-ndk/sysroot/usr/{include,lib}
+        export OHOS_NDK=$PWD/ohos-ndk
         
-        # 获取鸿蒙内核头文件 (使用 wget 代替 git)
-        wget https://gitee.com/openharmony/kernel_liteos_a/repository/archive/master.tar.gz?format=tar.gz -O kernel.tar.gz
-        tar -xzf kernel.tar.gz
-        cp -r kernel_liteos_a/kernel/include/* $OHOS_NDK/sysroot/usr/include/
-        
-        # 下载 musl libc 源码
-        wget https://gitee.com/openharmony/third_party_musl/repository/archive/master.tar.gz?format=tar.gz -O musl.tar.gz
-        tar -xzf musl.tar.gz
-        cd third_party_musl
+        # 获取鸿蒙内核头文件
+        wget -q https://gitee.com/openharmony/kernel_liteos_a/repository/archive/master.tar.gz -O kernel.tar.gz
+        mkdir kernel_src
+        tar -xzf kernel.tar.gz -C kernel_src --strip-components=1
+        cp -r kernel_src/kernel/include/* $OHOS_NDK/sysroot/usr/include/
         
         # 构建 musl libc
+        wget -q https://gitee.com/openharmony/third_party_musl/repository/archive/master.tar.gz -O musl.tar.gz
+        mkdir musl_src
+        tar -xzf musl.tar.gz -C musl_src --strip-components=1
+        cd musl_src
         ./configure \
           --target=aarch64-linux-ohos \
           --prefix=$OHOS_NDK/sysroot/usr \
@@ -49,11 +50,17 @@ jobs:
         make -j$(nproc) install
         cd ..
         
-        # 构建基础库 (使用 wget 下载)
+        # 构建基础库的函数
         build_lib() {
-          wget $1/repository/archive/master.tar.gz?format=tar.gz -O lib.tar.gz
-          tar -xzf lib.tar.gz
-          cd $(ls -d */ | head -1)
+          local lib_name=$1
+          local lib_url=$2
+          
+          echo "Building $lib_name..."
+          wget -q $lib_url/repository/archive/master.tar.gz -O $lib_name.tar.gz
+          mkdir ${lib_name}_src
+          tar -xzf $lib_name.tar.gz -C ${lib_name}_src --strip-components=1
+          
+          cd ${lib_name}_src
           mkdir build && cd build
           cmake .. \
             -DCMAKE_INSTALL_PREFIX=$OHOS_NDK/sysroot/usr \
@@ -61,29 +68,32 @@ jobs:
             -DCMAKE_CXX_COMPILER=clang++ \
             -DCMAKE_SYSROOT=$OHOS_NDK/sysroot \
             -DCMAKE_C_FLAGS="--target=aarch64-linux-ohos" \
-            -DCMAKE_CXX_FLAGS="--target=aarch64-linux-ohos"
-          cmake --build . --target install
+            -DCMAKE_CXX_FLAGS="--target=aarch64-linux-ohos" \
+            -DBUILD_SHARED_LIBS=OFF
+          cmake --build . --target install -j$(nproc)
           cd ../..
         }
         
-        build_lib https://gitee.com/openharmony/third_party_zlib
-        build_lib https://gitee.com/openharmony/third_party_libpng
-        build_lib https://gitee.com/openharmony/third_party_freetype
+        # 构建基础库
+        build_lib zlib https://gitee.com/openharmony/third_party_zlib
+        build_lib libpng https://gitee.com/openharmony/third_party_libpng
+        build_lib freetype https://gitee.com/openharmony/third_party_freetype
 
         echo "OHOS_NDK_HOME=$OHOS_NDK" >> $GITHUB_ENV
         echo "PATH=$PATH:$OHOS_NDK/llvm/bin" >> $GITHUB_ENV
 
-    # ========== 构建鸿蒙专用 Clang 工具链 ==========
+    # ========== 构建鸿蒙工具链 ==========
     - name: Build OpenHarmony toolchain
       run: |
-        OHOS_NDK=$OHOS_NDK_HOME
+        export OHOS_NDK=$OHOS_NDK_HOME
         
-        # 下载 LLVM 源码 (使用 wget)
-        wget https://github.com/llvm/llvm-project/archive/refs/heads/main.tar.gz -O llvm.tar.gz
-        tar -xzf llvm.tar.gz
-        cd llvm-project-main
+        # 下载 LLVM 源码
+        wget -q https://github.com/llvm/llvm-project/archive/refs/tags/llvmorg-15.0.7.tar.gz -O llvm.tar.gz
+        mkdir llvm_src
+        tar -xzf llvm.tar.gz -C llvm_src --strip-components=1
         
         # 编译 Clang
+        cd llvm_src
         mkdir build && cd build
         cmake -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
@@ -94,7 +104,7 @@ jobs:
           -DCMAKE_INSTALL_PREFIX=$OHOS_NDK/llvm \
           -DLLVM_BUILD_RUNTIME=OFF \
           ../llvm
-        ninja install
+        ninja install -j$(nproc)
         cd ../..
         
         # 创建 wrapper 脚本
@@ -109,18 +119,18 @@ jobs:
         chmod +x $OHOS_NDK/llvm/bin/aarch64-linux-ohos-clang*
         ln -s aarch64-linux-ohos-clang $OHOS_NDK/llvm/bin/aarch64-linux-ohos-clang++
 
-    # ========== Ghostscript 交叉编译 ==========
+    # ========== 构建 Ghostscript ==========
     - name: Build Ghostscript
       run: |
-        # 下载 Ghostscript 源码 (使用 wget)
-        wget https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs1003/ghostscript-10.03.0.tar.gz
-        tar -xzf ghostscript-10.03.0.tar.gz
-        cd ghostscript-10.03.0
+        # 下载 Ghostscript 源码
+        wget -q https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs1003/ghostscript-10.03.0.tar.gz
+        mkdir gs_src
+        tar -xzf ghostscript-10.03.0.tar.gz -C gs_src --strip-components=1
+        cd gs_src
         
         # 应用鸿蒙适配补丁
         cat > ohos.patch <<'EOPATCH'
         diff --git a/base/gp_getnv.c b/base/gp_getnv.c
-        index 1234567..89abcde 100644
         --- a/base/gp_getnv.c
         +++ b/base/gp_getnv.c
         @@ -22,6 +22,9 @@
@@ -134,7 +144,6 @@ jobs:
              /* On macOS, when running in a sandbox, the environment is sanitized. */
              if (strcmp(key, "HOME") == 0)
         diff --git a/base/gp_unix.c b/base/gp_unix.c
-        index 7654321..fghijkl 100644
         --- a/base/gp_unix.c
         +++ b/base/gp_unix.c
         @@ -83,7 +83,7 @@
@@ -142,11 +151,11 @@ jobs:
          gp_fopen(const char *fname, const char *mode)
          {
         -    return fopen(fname, mode);
-        +    return ohos_fopen(fname, mode); // 使用自定义实现
+        +    return ohos_fopen(fname, mode);
          }
         EOPATCH
         
-        git apply ohos.patch || patch -p1 < ohos.patch
+        patch -p1 < ohos.patch
         
         # 添加简化版鸿蒙文件IO实现
         cat > base/ohos_fileio.c <<'EOF'
@@ -182,6 +191,7 @@ jobs:
         # 验证文件类型
         file artifacts/libs/arm64-v8a/libgs.so
         echo "构建时间: $(date)" > artifacts/build-info.txt
+        echo "文件信息: $(file artifacts/libs/arm64-v8a/libgs.so)" >> artifacts/build-info.txt
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
