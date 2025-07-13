@@ -7,11 +7,15 @@ on:
         description: 'Ghostscript Version'
         required: false
         default: '10.03.0'
+      ndk_version:
+        description: 'HarmonyOS NDK Version'
+        required: false
+        default: '4.0.12.5'
   push:
     branches: [ master ]
 
 env:
-  OHOS_NDK_VERSION: "4.0.10.6"
+  OHOS_NDK_VERSION: ${{ github.event.inputs.ndk_version || '4.0.12.5' }}
   GHOSTSCRIPT_VERSION: ${{ github.event.inputs.ghostscript_version || '10.03.0' }}
   LIBRARY_NAME: "pdf_converter"
   PROJECT_ROOT: "native-build"
@@ -23,22 +27,15 @@ jobs:
     - name: Checkout repository (shallow)
       uses: actions/checkout@v4
       with:
-        fetch-depth: 1  # 减少磁盘使用
+        fetch-depth: 1
 
     - name: Free disk space
       run: |
-        # 清理系统缓存
         sudo apt-get clean
         sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
-        
-        # 清理包管理器缓存
         if command -v npm &> /dev/null; then npm cache clean --force; fi
         if command -v pip &> /dev/null; then pip cache purge; fi
-        
-        # 删除临时文件
         sudo rm -rf /tmp/* /var/tmp/*
-        
-        # 检查磁盘空间
         df -h
 
     - name: Setup directories
@@ -49,47 +46,74 @@ jobs:
     - name: Setup HarmonyOS NDK
       run: |
         mkdir -p ohos-ndk
-        NDK_ZIP="ohos-sdk-linux-public-${{ env.OHOS_NDK_VERSION }}.zip"
+        VERSION="${{ env.OHOS_NDK_VERSION }}"
         
-        # 下载鸿蒙 NDK
-        wget "https://repo.huaweicloud.com/harmonyos/sdk/ohos-sdk/$NDK_ZIP" -O $NDK_ZIP
+        # 尝试多种可能的 URL 格式
+        URL_SCHEMES=(
+          "https://repo.huaweicloud.com/harmonyos/sdk/ohos-sdk/$VERSION/ohos-sdk-linux-public-$VERSION.zip"
+          "https://repo.huaweicloud.com/harmonyos/sdk/ohos-sdk/ohos-sdk-linux-public-$VERSION.zip"
+          "https://repo.huaweicloud.com/harmonyos/sdk/ohos-sdk/$VERSION/ohos-sdk-linux-$VERSION.zip"
+          "https://repo.huaweicloud.com/harmonyos/sdk/ohos-sdk/ohos-sdk-linux-$VERSION.zip"
+        )
         
-        # 解压并设置路径
-        unzip $NDK_ZIP -d ohos-ndk
-        echo "OHOS_NDK_PATH=$GITHUB_WORKSPACE/ohos-ndk/ohos-sdk/linux/native" >> $GITHUB_ENV
+        # 尝试下载
+        DOWNLOAD_SUCCESS=0
+        for url in "${URL_SCHEMES[@]}"; do
+          echo "Trying URL: $url"
+          if wget -q --spider "$url"; then
+            echo "URL exists, downloading..."
+            if wget "$url" -O ndk.zip; then
+              DOWNLOAD_SUCCESS=1
+              echo "Downloaded NDK successfully from $url"
+              break
+            fi
+          fi
+          sleep 3
+        done
         
-        # 清理压缩包
-        rm -f $NDK_ZIP
+        if [ $DOWNLOAD_SUCCESS -ne 1 ]; then
+          echo "❌ All download attempts failed for NDK version $VERSION"
+          echo "Please check available versions at: https://repo.huaweicloud.com/harmonyos/sdk/ohos-sdk/"
+          exit 1
+        fi
+        
+        # 解压并查找 native 目录
+        unzip -q ndk.zip -d ohos-ndk
+        NATIVE_PATH=$(find ohos-ndk -type d -name "native" | head -n1)
+        if [ -z "$NATIVE_PATH" ]; then
+          echo "❌ Failed to find native directory in NDK"
+          echo "Contents of ohos-ndk:"
+          ls -R ohos-ndk
+          exit 1
+        fi
+        
+        echo "OHOS_NDK_PATH=$GITHUB_WORKSPACE/$NATIVE_PATH" >> $GITHUB_ENV
+        rm -f ndk.zip
+        echo "NDK setup complete at $NATIVE_PATH"
 
     - name: Download Ghostscript source
       run: |
-        # 使用正确的下载 URL
         VERSION="${{ env.GHOSTSCRIPT_VERSION }}"
         GHOSTSCRIPT_URL="https://github.com/ArtifexSoftware/ghostpdl/archive/refs/tags/ghostscript-$VERSION.tar.gz"
-        
-        echo "下载 URL: $GHOSTSCRIPT_URL"
+        echo "Downloading Ghostscript from: $GHOSTSCRIPT_URL"
         
         # 带重试的下载
         for i in {1..3}; do
-          if wget $GHOSTSCRIPT_URL -O ghostscript.tar.gz; then
-            echo "✅ 下载成功"
+          if wget "$GHOSTSCRIPT_URL" -O ghostscript.tar.gz; then
+            echo "Downloaded Ghostscript successfully"
             break
           else
-            echo "⚠️ 下载失败，尝试 #$i"
+            echo "Download attempt $i failed"
+            if [ $i -eq 3 ]; then
+              echo "❌ Failed to download Ghostscript after 3 attempts"
+              exit 1
+            fi
             sleep 10
           fi
         done
         
-        # 验证下载
-        if [ ! -f "ghostscript.tar.gz" ]; then
-          echo "❌ 无法下载 Ghostscript 源码"
-          exit 1
-        fi
-        
-        # 创建目标目录
+        # 提取必要的文件
         mkdir -p ${{ env.PROJECT_PATH }}/src/main/cpp/ghostscript
-        
-        # 提取必要的子目录
         tar -xzf ghostscript.tar.gz \
           --strip-components=3 \
           --directory=${{ env.PROJECT_PATH }}/src/main/cpp/ghostscript \
@@ -98,14 +122,13 @@ jobs:
           ghostpdl-ghostscript-$VERSION/ghostscript/main \
           ghostpdl-ghostscript-$VERSION/ghostscript/devices
         
-        # 验证关键文件
+        # 验证提取的文件
         if [ ! -f "${{ env.PROJECT_PATH }}/src/main/cpp/ghostscript/devices/gdevpclm.c" ]; then
-          echo "❌ 文件提取失败！目录内容:"
-          find ${{ env.PROJECT_PATH }}/src/main/cpp/ghostscript -type f | head -20
+          echo "❌ Extracted files are missing. Listing extracted directory:"
+          ls -R ${{ env.PROJECT_PATH }}/src/main/cpp/ghostscript
           exit 1
         fi
         
-        # 清理
         rm -f ghostscript.tar.gz
 
     - name: Create CMake project structure
@@ -117,24 +140,19 @@ jobs:
         cmake_minimum_required(VERSION 3.16)
         project(pdf_converter)
         
-        # 设置编译参数
         set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D__OHOS__ -Wno-deprecated")
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__OHOS__")
         
-        # 添加 Ghostscript 子目录
         add_subdirectory(src/main/cpp/ghostscript)
         
-        # 创建共享库
         add_library(pdf_converter SHARED src/main/cpp/pdf_converter.cpp)
         
-        # 链接库
         target_link_libraries(pdf_converter PUBLIC
             ghostscript
             libace_napi.z.so
             libhilog_ndk.z.so
         )
         
-        # 包含目录
         target_include_directories(pdf_converter PRIVATE
             src/main/cpp/ghostscript
         )
@@ -143,24 +161,21 @@ jobs:
         # 创建 Ghostscript 的 CMakeLists
         mkdir -p src/main/cpp/ghostscript
         cat > src/main/cpp/ghostscript/CMakeLists.txt << 'EOF'
-        # 只包含必要的源文件
         file(GLOB_RECURSE GS_SOURCES
             "base/*.c"
             "psi/*.c"
             "main/*.c"
-            "devices/gdevpclm.c"  # 只包含 PCLm 设备
+            "devices/gdevpclm.c"
         )
         
         add_library(ghostscript STATIC ${GS_SOURCES})
         
-        # 鸿蒙特定定义
         target_compile_definitions(ghostscript PRIVATE
             __OHOS__=1
             USE_LARGE_FILES=1
             OPAQUE=1
         )
         
-        # 包含目录
         target_include_directories(ghostscript PUBLIC
             ${CMAKE_CURRENT_SOURCE_DIR}
             ${CMAKE_CURRENT_SOURCE_DIR}/base
@@ -178,18 +193,15 @@ jobs:
             napi_value args[2];
             napi_get_cb_info(env, info, &argc, args, nullptr, nullptr);
             
-            // 获取文件路径
             char pdfPath[256], pclmPath[256];
             size_t pathLen;
             napi_get_value_string_utf8(env, args[0], pdfPath, sizeof(pdfPath), &pathLen);
             napi_get_value_string_utf8(env, args[1], pclmPath, sizeof(pclmPath), &pathLen);
             
-            // 初始化 Ghostscript
             void *instance;
             int code = gsapi_new_instance(&instance, nullptr);
             if (code < 0) return nullptr;
             
-            // 设置转换参数
             const char *argv[] = {
                 "ghostscript",
                 "-dNOPAUSE", "-dBATCH", "-dQUIET",
@@ -202,7 +214,6 @@ jobs:
             };
             int argCount = sizeof(argv)/sizeof(char*) - 1;
             
-            // 执行转换
             code = gsapi_init_with_args(instance, argCount, (char **)argv);
             gsapi_exit(instance);
             gsapi_delete_instance(instance);
@@ -210,7 +221,6 @@ jobs:
             return nullptr;
         }
         
-        // 模块初始化
         EXTERN_C_START
         static napi_value Init(napi_env env, napi_value exports) {
             napi_property_descriptor desc = {
@@ -221,7 +231,6 @@ jobs:
         }
         EXTERN_C_END
         
-        // 模块注册
         static napi_module pdf_converter_module = {
             .nm_version = 1,
             .nm_register_func = Init,
@@ -236,11 +245,8 @@ jobs:
     - name: Build with CMake and Ninja
       run: |
         cd ${{ env.PROJECT_PATH }}
-        
-        # 创建构建目录
         mkdir build && cd build
         
-        # 使用 Ninja 构建系统
         cmake .. \
           -G Ninja \
           -DCMAKE_TOOLCHAIN_FILE=${{ env.OHOS_NDK_PATH }}/build/cmake/ohos.toolchain.cmake \
@@ -248,13 +254,10 @@ jobs:
           -DOHOS_STL=c++_shared \
           -DCMAKE_BUILD_TYPE=MinSizeRel
         
-        # 使用 Ninja 构建
         ninja
         
-        # 重命名为鸿蒙标准格式
+        # 重命名并清理
         mv libpdf_converter.so libpdf_converter.z.so
-        
-        # 清理中间文件
         find . -name "*.o" -delete
         rm -rf CMakeFiles
 
@@ -263,6 +266,7 @@ jobs:
         cd ${{ env.PROJECT_PATH }}/build
         file libpdf_converter.z.so
         ls -lh libpdf_converter.z.so
+        echo "File size: $(du -h libpdf_converter.z.so | cut -f1)"
 
     - name: Upload artifact
       uses: actions/upload-artifact@v4
