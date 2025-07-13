@@ -21,30 +21,51 @@ jobs:
       run: |
         apt-get update
         apt-get install -y git cmake ninja-build build-essential \
-          autoconf automake libtool pkg-config wget tar gzip
+          autoconf automake libtool pkg-config wget tar gzip tree
         echo "工具安装完成: $(git --version), $(cmake --version | head -1)"
+
+    # ========== 创建基础目录结构 ==========
+    - name: Create directory structure
+      run: |
+        # 创建完整的目录树
+        mkdir -p ohos-ndk/sysroot/usr/{include,lib,bin}
+        mkdir -p ohos-ndk/llvm/bin
+        
+        # 验证目录创建
+        tree -d ohos-ndk || ls -R ohos-ndk
+        
+        # 设置环境变量
+        echo "OHOS_NDK_HOME=$PWD/ohos-ndk" >> $GITHUB_ENV
+        echo "PATH=$PATH:$PWD/ohos-ndk/llvm/bin" >> $GITHUB_ENV
 
     # ========== 构建鸿蒙系统组件 ==========
     - name: Build OpenHarmony sysroot
       run: |
-        # 创建基础目录结构
-        mkdir -p ohos-ndk/sysroot/usr/{include,lib}
-        export OHOS_NDK=$PWD/ohos-ndk
+        # 确保目录存在
+        mkdir -p $OHOS_NDK_HOME/sysroot/usr/include
+        mkdir -p $OHOS_NDK_HOME/sysroot/usr/lib
         
         # 获取鸿蒙内核头文件
         wget -q https://gitee.com/openharmony/kernel_liteos_a/repository/archive/master.tar.gz -O kernel.tar.gz
         mkdir kernel_src
         tar -xzf kernel.tar.gz -C kernel_src --strip-components=1
-        cp -r kernel_src/kernel/include/* $OHOS_NDK/sysroot/usr/include/
+        
+        # 验证内核源码结构
+        ls -lR kernel_src | head -20
+        
+        # 复制头文件 (确保目标目录存在)
+        mkdir -p $OHOS_NDK_HOME/sysroot/usr/include
+        cp -r kernel_src/kernel/include/* $OHOS_NDK_HOME/sysroot/usr/include/
         
         # 构建 musl libc
         wget -q https://gitee.com/openharmony/third_party_musl/repository/archive/master.tar.gz -O musl.tar.gz
         mkdir musl_src
         tar -xzf musl.tar.gz -C musl_src --strip-components=1
+        
         cd musl_src
         ./configure \
           --target=aarch64-linux-ohos \
-          --prefix=$OHOS_NDK/sysroot/usr \
+          --prefix=$OHOS_NDK_HOME/sysroot/usr \
           --disable-shared \
           --enable-static
         make -j$(nproc) install
@@ -63,10 +84,10 @@ jobs:
           cd ${lib_name}_src
           mkdir build && cd build
           cmake .. \
-            -DCMAKE_INSTALL_PREFIX=$OHOS_NDK/sysroot/usr \
+            -DCMAKE_INSTALL_PREFIX=$OHOS_NDK_HOME/sysroot/usr \
             -DCMAKE_C_COMPILER=clang \
             -DCMAKE_CXX_COMPILER=clang++ \
-            -DCMAKE_SYSROOT=$OHOS_NDK/sysroot \
+            -DCMAKE_SYSROOT=$OHOS_NDK_HOME/sysroot \
             -DCMAKE_C_FLAGS="--target=aarch64-linux-ohos" \
             -DCMAKE_CXX_FLAGS="--target=aarch64-linux-ohos" \
             -DBUILD_SHARED_LIBS=OFF
@@ -79,14 +100,9 @@ jobs:
         build_lib libpng https://gitee.com/openharmony/third_party_libpng
         build_lib freetype https://gitee.com/openharmony/third_party_freetype
 
-        echo "OHOS_NDK_HOME=$OHOS_NDK" >> $GITHUB_ENV
-        echo "PATH=$PATH:$OHOS_NDK/llvm/bin" >> $GITHUB_ENV
-
     # ========== 构建鸿蒙工具链 ==========
     - name: Build OpenHarmony toolchain
       run: |
-        export OHOS_NDK=$OHOS_NDK_HOME
-        
         # 下载 LLVM 源码
         wget -q https://github.com/llvm/llvm-project/archive/refs/tags/llvmorg-15.0.7.tar.gz -O llvm.tar.gz
         mkdir llvm_src
@@ -101,23 +117,23 @@ jobs:
           -DLLVM_ENABLE_PROJECTS="clang;lld" \
           -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind" \
           -DLLVM_DEFAULT_TARGET_TRIPLE=aarch64-linux-ohos \
-          -DCMAKE_INSTALL_PREFIX=$OHOS_NDK/llvm \
+          -DCMAKE_INSTALL_PREFIX=$OHOS_NDK_HOME/llvm \
           -DLLVM_BUILD_RUNTIME=OFF \
           ../llvm
         ninja install -j$(nproc)
         cd ../..
         
         # 创建 wrapper 脚本
-        cat > $OHOS_NDK/llvm/bin/aarch64-linux-ohos-clang <<'EOF'
+        cat > $OHOS_NDK_HOME/llvm/bin/aarch64-linux-ohos-clang <<'EOF'
         #!/bin/bash
-        exec $PWD/ohos-ndk/llvm/bin/clang \
+        exec $OHOS_NDK_HOME/llvm/bin/clang \
           --target=aarch64-linux-ohos \
-          --sysroot=$PWD/ohos-ndk/sysroot \
+          --sysroot=$OHOS_NDK_HOME/sysroot \
           -fuse-ld=lld \
           "$@"
         EOF
-        chmod +x $OHOS_NDK/llvm/bin/aarch64-linux-ohos-clang*
-        ln -s aarch64-linux-ohos-clang $OHOS_NDK/llvm/bin/aarch64-linux-ohos-clang++
+        chmod +x $OHOS_NDK_HOME/llvm/bin/aarch64-linux-ohos-clang*
+        ln -s aarch64-linux-ohos-clang $OHOS_NDK_HOME/llvm/bin/aarch64-linux-ohos-clang++
 
     # ========== 构建 Ghostscript ==========
     - name: Build Ghostscript
@@ -167,6 +183,9 @@ jobs:
         }
         EOF
         
+        # 确保输出目录存在
+        mkdir -p /gs-build
+        
         ./autogen.sh
         ./configure \
           --host=aarch64-linux-ohos \
@@ -185,13 +204,24 @@ jobs:
     # ========== 产物打包 ==========
     - name: Package artifacts
       run: |
+        # 确保输出目录存在
         mkdir -p artifacts/libs/arm64-v8a
+        
+        # 验证libgs.so存在
+        if [ ! -f /gs-build/lib/libgs.so ]; then
+          echo "错误: libgs.so 未找到!"
+          find /gs-build -name "*.so" -print
+          exit 1
+        fi
+        
         cp /gs-build/lib/libgs.so artifacts/libs/arm64-v8a/
         
         # 验证文件类型
         file artifacts/libs/arm64-v8a/libgs.so
         echo "构建时间: $(date)" > artifacts/build-info.txt
         echo "文件信息: $(file artifacts/libs/arm64-v8a/libgs.so)" >> artifacts/build-info.txt
+        echo "目录结构:" >> artifacts/build-info.txt
+        tree -L 3 ohos-ndk >> artifacts/build-info.txt || ls -R ohos-ndk >> artifacts/build-info.txt
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
