@@ -16,6 +16,13 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v4
 
+    # ========== 安装基础构建工具 ==========
+    - name: Install essential tools
+      run: |
+        apt-get update
+        apt-get install -y git cmake ninja-build build-essential autoconf automake libtool pkg-config
+        echo "工具安装完成: $(git --version), $(cmake --version | head -1)"
+
     # ========== 从源码构建鸿蒙系统组件 ==========
     - name: Build OpenHarmony sysroot
       run: |
@@ -23,13 +30,17 @@ jobs:
         mkdir -p ohos-ndk/sysroot/{usr/include,usr/lib}
         OHOS_NDK=$PWD/ohos-ndk
         
-        # 获取鸿蒙内核头文件
-        git clone --depth 1 https://gitee.com/openharmony/kernel_liteos_a.git
+        # 获取鸿蒙内核头文件 (使用 wget 代替 git)
+        wget https://gitee.com/openharmony/kernel_liteos_a/repository/archive/master.tar.gz?format=tar.gz -O kernel.tar.gz
+        tar -xzf kernel.tar.gz
         cp -r kernel_liteos_a/kernel/include/* $OHOS_NDK/sysroot/usr/include/
         
-        # 构建 musl libc
-        git clone --depth 1 https://gitee.com/openharmony/third_party_musl.git
+        # 下载 musl libc 源码
+        wget https://gitee.com/openharmony/third_party_musl/repository/archive/master.tar.gz?format=tar.gz -O musl.tar.gz
+        tar -xzf musl.tar.gz
         cd third_party_musl
+        
+        # 构建 musl libc
         ./configure \
           --target=aarch64-linux-ohos \
           --prefix=$OHOS_NDK/sysroot/usr \
@@ -38,10 +49,11 @@ jobs:
         make -j$(nproc) install
         cd ..
         
-        # 构建基础库 (zlib, libpng 等)
+        # 构建基础库 (使用 wget 下载)
         build_lib() {
-          git clone --depth 1 $1
-          cd $(basename $1 .git)
+          wget $1/repository/archive/master.tar.gz?format=tar.gz -O lib.tar.gz
+          tar -xzf lib.tar.gz
+          cd $(ls -d */ | head -1)
           mkdir build && cd build
           cmake .. \
             -DCMAKE_INSTALL_PREFIX=$OHOS_NDK/sysroot/usr \
@@ -54,9 +66,9 @@ jobs:
           cd ../..
         }
         
-        build_lib https://gitee.com/openharmony/third_party_zlib.git
-        build_lib https://gitee.com/openharmony/third_party_libpng.git
-        build_lib https://gitee.com/openharmony/third_party_freetype.git
+        build_lib https://gitee.com/openharmony/third_party_zlib
+        build_lib https://gitee.com/openharmony/third_party_libpng
+        build_lib https://gitee.com/openharmony/third_party_freetype
 
         echo "OHOS_NDK_HOME=$OHOS_NDK" >> $GITHUB_ENV
         echo "PATH=$PATH:$OHOS_NDK/llvm/bin" >> $GITHUB_ENV
@@ -66,9 +78,12 @@ jobs:
       run: |
         OHOS_NDK=$OHOS_NDK_HOME
         
-        # 编译适配的 Clang 编译器
-        git clone --depth 1 https://github.com/llvm/llvm-project.git
-        cd llvm-project
+        # 下载 LLVM 源码 (使用 wget)
+        wget https://github.com/llvm/llvm-project/archive/refs/heads/main.tar.gz -O llvm.tar.gz
+        tar -xzf llvm.tar.gz
+        cd llvm-project-main
+        
+        # 编译 Clang
         mkdir build && cd build
         cmake -G Ninja \
           -DCMAKE_BUILD_TYPE=Release \
@@ -97,9 +112,10 @@ jobs:
     # ========== Ghostscript 交叉编译 ==========
     - name: Build Ghostscript
       run: |
-        git clone https://git.ghostscript.com/ghostpdl.git
-        cd ghostpdl
-        git checkout tags/10.03.0
+        # 下载 Ghostscript 源码 (使用 wget)
+        wget https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs1003/ghostscript-10.03.0.tar.gz
+        tar -xzf ghostscript-10.03.0.tar.gz
+        cd ghostscript-10.03.0
         
         # 应用鸿蒙适配补丁
         cat > ohos.patch <<'EOPATCH'
@@ -126,11 +142,21 @@ jobs:
          gp_fopen(const char *fname, const char *mode)
          {
         -    return fopen(fname, mode);
-        +    return NULL; // 简化处理，实际需实现鸿蒙文件I/O
+        +    return ohos_fopen(fname, mode); // 使用自定义实现
          }
         EOPATCH
         
-        git apply ohos.patch
+        git apply ohos.patch || patch -p1 < ohos.patch
+        
+        # 添加简化版鸿蒙文件IO实现
+        cat > base/ohos_fileio.c <<'EOF'
+        #include <stdio.h>
+        
+        FILE* ohos_fopen(const char* path, const char* mode) {
+            // 实际项目中应替换为鸿蒙API
+            return fopen(path, mode);
+        }
+        EOF
         
         ./autogen.sh
         ./configure \
@@ -141,7 +167,7 @@ jobs:
           --with-drivers=PCLm \
           CC="$OHOS_NDK_HOME/llvm/bin/aarch64-linux-ohos-clang" \
           CXX="$OHOS_NDK_HOME/llvm/bin/aarch64-linux-ohos-clang++" \
-          CFLAGS="-fPIC -O3 -nostdinc -I$OHOS_NDK_HOME/sysroot/usr/include" \
+          CFLAGS="-fPIC -O3 -I$OHOS_NDK_HOME/sysroot/usr/include -DOHOS_CUSTOM_IO" \
           LDFLAGS="-L$OHOS_NDK_HOME/sysroot/usr/lib -lz -lpng -lfreetype"
         
         make -j$(nproc)
@@ -153,9 +179,9 @@ jobs:
         mkdir -p artifacts/libs/arm64-v8a
         cp /gs-build/lib/libgs.so artifacts/libs/arm64-v8a/
         
-        # 添加版本信息
-        echo "BuildTime: $(date -u)" > artifacts/build-info.txt
-        $OHOS_NDK_HOME/llvm/bin/llvm-readelf -h artifacts/libs/arm64-v8a/libgs.so >> artifacts/build-info.txt
+        # 验证文件类型
+        file artifacts/libs/arm64-v8a/libgs.so
+        echo "构建时间: $(date)" > artifacts/build-info.txt
 
     - name: Upload artifacts
       uses: actions/upload-artifact@v4
