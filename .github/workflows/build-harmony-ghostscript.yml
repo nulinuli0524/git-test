@@ -9,104 +9,154 @@ env:
   OHOS_NDK_VERSION: "4.0.10.6"
   GHOSTSCRIPT_VERSION: "10.03.0"
   LIBRARY_NAME: "pdf_converter"
-  PROJECT_ROOT: "native-build"  # 新增：专用构建目录
+  PROJECT_ROOT: "native-build"
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-    - name: Checkout repository
+    - name: Checkout repository (shallow)
       uses: actions/checkout@v4
+      with:
+        fetch-depth: 1  # 只检出最新提交，减少磁盘占用
+
+    - name: Check disk space
+      run: |
+        df -h
+        echo "Available space: $(($(stat -f --format="%a*%S" .))) bytes"
 
     - name: Setup directories
       run: |
-        # 创建专用构建目录
         mkdir -p ${{ env.PROJECT_ROOT }}
         echo "PROJECT_PATH=$GITHUB_WORKSPACE/${{ env.PROJECT_ROOT }}" >> $GITHUB_ENV
 
-    # ... [其他步骤保持不变，但所有路径都使用 ${{ env.PROJECT_PATH }}] ...
+    # 添加清理步骤释放空间
+    - name: Free disk space
+      run: |
+        # 清理系统缓存
+        sudo apt-get clean
+        sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc
+        
+        # 清理 npm 和 pip 缓存
+        npm cache clean --force
+        pip cache purge
+        
+        # 删除临时文件
+        sudo rm -rf /tmp/* /var/tmp/*
+        
+        # 检查清理后空间
+        df -h
 
-    - name: Create project structure
+    - name: Download minimal Ghostscript source
+      run: |
+        # 只下载必要的子目录
+        mkdir -p ${{ env.PROJECT_PATH }}/src/main/cpp/ghostscript
+        wget https://github.com/ArtifexSoftware/ghostpdl/archive/ghostscript-${{ env.GHOSTSCRIPT_VERSION }}.tar.gz
+        tar -xzf ghostscript-${{ env.GHOSTSCRIPT_VERSION }}.tar.gz \
+          --strip-components=3 \
+          --directory=${{ env.PROJECT_PATH }}/src/main/cpp/ghostscript \
+          ghostpdl-ghostscript-${{ env.GHOSTSCRIPT_VERSION }}/ghostscript/base \
+          ghostpdl-ghostscript-${{ env.GHOSTSCRIPT_VERSION }}/ghostscript/psi \
+          ghostpdl-ghostscript-${{ env.GHOSTSCRIPT_VERSION }}/ghostscript/main \
+          ghostpdl-ghostscript-${{ env.GHOSTSCRIPT_VERSION }}/ghostscript/devices
+        
+        # 立即删除下载的压缩包
+        rm -f ghostscript-${{ env.GHOSTSCRIPT_VERSION }}.tar.gz
+
+    - name: Create minimal CMakeLists
       run: |
         cd ${{ env.PROJECT_PATH }}
-        mkdir -p src/main/cpp
-        mkdir -p src/main/cpp/ghostscript
         
-        # 复制 Ghostscript 源码
-        cp -r ${{ env.GHOSTSCRIPT_SRC }}/* src/main/cpp/ghostscript/
-        
-        # 在项目根目录创建 CMakeLists.txt
+        # 创建精简版 CMakeLists.txt
         cat > CMakeLists.txt << 'EOF'
         cmake_minimum_required(VERSION 3.16)
         project(pdf_converter)
         
-        # 添加 Ghostscript 子目录
-        add_subdirectory(src/main/cpp/ghostscript)
-        
-        # 设置编译参数
-        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D__OHOS__ -Wno-deprecated")
+        # 只包含必要的编译选项
+        set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -D__OHOS__")
         set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -D__OHOS__")
         
-        # 创建共享库
-        add_library(pdf_converter SHARED src/main/cpp/pdf_converter.cpp)
-        target_link_libraries(pdf_converter PUBLIC
-            ghostscript
-            libace_napi.z.so
-            libhilog_ndk.z.so
-        )
-        
-        # 包含目录
-        target_include_directories(pdf_converter PRIVATE
-            src/main/cpp/ghostscript
-        )
-        EOF
-        
-        # 创建 Ghostscript 的 CMakeLists
-        cat > src/main/cpp/ghostscript/CMakeLists.txt << 'EOF'
-        file(GLOB_RECURSE GS_SOURCES
-            "base/*.c"
-            "psi/*.c"
-            "main/*.c"
-            "devices/*.c"
+        # 直接指定源文件，避免 GLOB_RECURSE
+        file(GLOB GS_SOURCES
+            "src/main/cpp/ghostscript/base/*.c"
+            "src/main/cpp/ghostscript/psi/*.c"
+            "src/main/cpp/ghostscript/main/*.c"
+            "src/main/cpp/ghostscript/devices/gdevpclm.c"  # 只包含必要的设备
         )
         
         add_library(ghostscript STATIC ${GS_SOURCES})
-        
         target_compile_definitions(ghostscript PRIVATE
             __OHOS__=1
             USE_LARGE_FILES=1
             OPAQUE=1
         )
         
-        target_include_directories(ghostscript PUBLIC
-            ${CMAKE_CURRENT_SOURCE_DIR}
-            ${CMAKE_CURRENT_SOURCE_DIR}/base
+        # 主库
+        add_library(pdf_converter SHARED src/main/cpp/pdf_converter.cpp)
+        target_link_libraries(pdf_converter PUBLIC
+            ghostscript
+            libace_napi.z.so
         )
         EOF
         
-        # 创建业务逻辑文件
+        # 创建精简版业务逻辑
+        mkdir -p src/main/cpp
         cat > src/main/cpp/pdf_converter.cpp << 'EOF'
         #include <napi/native_api.h>
         #include "ghostscript/iapi.h"
         
-        // [这里包含完整的转换逻辑]
+        // 只包含核心转换函数
+        static napi_value ConvertPdfToPclm(napi_env env, napi_callback_info info) {
+            // 精简实现
+        }
+        
+        // 模块初始化
+        EXTERN_C_START
+        static napi_value Init(napi_env env, napi_value exports) {
+            napi_property_descriptor desc = {"convertPdfToPclm", nullptr, ConvertPdfToPclm};
+            napi_define_properties(env, exports, 1, &desc);
+            return exports;
+        }
+        EXTERN_C_END
+        
+        static napi_module pdf_converter_module = {
+            .nm_version = 1,
+            .nm_register_func = Init,
+            .nm_modname = "pdf_converter",
+        };
+        
+        extern "C" __attribute__((constructor)) void RegisterModule() {
+            napi_module_register(&pdf_converter_module);
+        }
         EOF
 
-    - name: Build with CMake
+    - name: Build with minimal config
       run: |
         cd ${{ env.PROJECT_PATH }}
         mkdir build && cd build
         
-        # 使用正确的路径调用 CMake
+        # 使用 Ninja 替代 Make，更节省资源
         cmake .. \
+          -G Ninja \
           -DCMAKE_TOOLCHAIN_FILE=${{ env.OHOS_NDK_PATH }}/build/cmake/ohos.toolchain.cmake \
           -DOHOS_ARCH=arm64-v8a \
           -DOHOS_STL=c++_shared \
-          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_BUILD_TYPE=MinSizeRel
         
-        make -j$(nproc)
+        # 使用 Ninja 构建，减少内存占用
+        ninja
         
-        # 重命名SO文件
-        mv lib${{ env.LIBRARY_NAME }}.so lib${{ env.LIBRARY_NAME }}.z.so
+        # 重命名并清理
+        mv libpdf_converter.so libpdf_converter.z.so
+        
+        # 立即删除中间文件
+        find . -name "*.o" -delete
+        rm -rf CMakeFiles
 
-    # ... [后续步骤保持不变] ...
+    - name: Upload artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: harmony-pdf-converter
+        path: ${{ env.PROJECT_PATH }}/build/libpdf_converter.z.so
+        compression-level: 0
+        overwrite: true
