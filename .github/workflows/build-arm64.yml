@@ -1,47 +1,164 @@
-name: Build & Upload SO Artifacts
+name: Build Ghostscript for OpenHarmony
 
 on:
-  push:
-    branches:
-      - main
   workflow_dispatch:
+  push:
+    paths:
+      - 'native/**'
 
 jobs:
-  build-and-upload:
+  build:
     runs-on: ubuntu-latest
+    container:
+      image: silkeh/clang:15  # 预装完整 LLVM 工具链
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+    - name: Checkout code
+      uses: actions/checkout@v4
 
-      - name: 安装构建依赖
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            build-essential \
-            cmake \
-            libgs-dev \
-            ghostscript \
-            libnode-dev
+    # ========== 从源码构建鸿蒙系统组件 ==========
+    - name: Build OpenHarmony sysroot
+      run: |
+        # 创建基础目录结构
+        mkdir -p ohos-ndk/sysroot/{usr/include,usr/lib}
+        OHOS_NDK=$PWD/ohos-ndk
+        
+        # 获取鸿蒙内核头文件
+        git clone --depth 1 https://gitee.com/openharmony/kernel_liteos_a.git
+        cp -r kernel_liteos_a/kernel/include/* $OHOS_NDK/sysroot/usr/include/
+        
+        # 构建 musl libc
+        git clone --depth 1 https://gitee.com/openharmony/third_party_musl.git
+        cd third_party_musl
+        ./configure \
+          --target=aarch64-linux-ohos \
+          --prefix=$OHOS_NDK/sysroot/usr \
+          --disable-shared \
+          --enable-static
+        make -j$(nproc) install
+        cd ..
+        
+        # 构建基础库 (zlib, libpng 等)
+        build_lib() {
+          git clone --depth 1 $1
+          cd $(basename $1 .git)
+          mkdir build && cd build
+          cmake .. \
+            -DCMAKE_INSTALL_PREFIX=$OHOS_NDK/sysroot/usr \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_SYSROOT=$OHOS_NDK/sysroot \
+            -DCMAKE_C_FLAGS="--target=aarch64-linux-ohos" \
+            -DCMAKE_CXX_FLAGS="--target=aarch64-linux-ohos"
+          cmake --build . --target install
+          cd ../..
+        }
+        
+        build_lib https://gitee.com/openharmony/third_party_zlib.git
+        build_lib https://gitee.com/openharmony/third_party_libpng.git
+        build_lib https://gitee.com/openharmony/third_party_freetype.git
 
-      - name: 构建 gs_napi.so
-        run: |
-          cd native
-          cmake -S . -B build -DCMAKE_BUILD_TYPE=Release
-          cmake --build build --parallel
+        echo "OHOS_NDK_HOME=$OHOS_NDK" >> $GITHUB_ENV
+        echo "PATH=$PATH:$OHOS_NDK/llvm/bin" >> $GITHUB_ENV
 
-      - name: 准备 SO 目录
-        run: mkdir -p entry/src/main/resources/libs/arm64-v8a
+    # ========== 构建鸿蒙专用 Clang 工具链 ==========
+    - name: Build OpenHarmony toolchain
+      run: |
+        OHOS_NDK=$OHOS_NDK_HOME
+        
+        # 编译适配的 Clang 编译器
+        git clone --depth 1 https://github.com/llvm/llvm-project.git
+        cd llvm-project
+        mkdir build && cd build
+        cmake -G Ninja \
+          -DCMAKE_BUILD_TYPE=Release \
+          -DLLVM_TARGETS_TO_BUILD="AArch64" \
+          -DLLVM_ENABLE_PROJECTS="clang;lld" \
+          -DLLVM_ENABLE_RUNTIMES="libcxx;libcxxabi;libunwind" \
+          -DLLVM_DEFAULT_TARGET_TRIPLE=aarch64-linux-ohos \
+          -DCMAKE_INSTALL_PREFIX=$OHOS_NDK/llvm \
+          -DLLVM_BUILD_RUNTIME=OFF \
+          ../llvm
+        ninja install
+        cd ../..
+        
+        # 创建 wrapper 脚本
+        cat > $OHOS_NDK/llvm/bin/aarch64-linux-ohos-clang <<'EOF'
+        #!/bin/bash
+        exec $PWD/ohos-ndk/llvm/bin/clang \
+          --target=aarch64-linux-ohos \
+          --sysroot=$PWD/ohos-ndk/sysroot \
+          -fuse-ld=lld \
+          "$@"
+        EOF
+        chmod +x $OHOS_NDK/llvm/bin/aarch64-linux-ohos-clang*
+        ln -s aarch64-linux-ohos-clang $OHOS_NDK/llvm/bin/aarch64-linux-ohos-clang++
 
-      - name: 拷贝 so 文件
-        run: |
-          cp native/build/gs_napi.so entry/src/main/resources/libs/arm64-v8a/
-          cp /usr/lib/x86_64-linux-gnu/libgs.so entry/src/main/resources/libs/arm64-v8a/
+    # ========== Ghostscript 交叉编译 ==========
+    - name: Build Ghostscript
+      run: |
+        git clone https://git.ghostscript.com/ghostpdl.git
+        cd ghostpdl
+        git checkout tags/10.03.0
+        
+        # 应用鸿蒙适配补丁
+        cat > ohos.patch <<'EOPATCH'
+        diff --git a/base/gp_getnv.c b/base/gp_getnv.c
+        index 1234567..89abcde 100644
+        --- a/base/gp_getnv.c
+        +++ b/base/gp_getnv.c
+        @@ -22,6 +22,9 @@
+         const char *
+         gp_getenv(const char *key)
+         {
+        +    /* OpenHarmony doesn't have environment variables */
+        +    return NULL;
+        +
+         #ifdef __APPLE__
+             /* On macOS, when running in a sandbox, the environment is sanitized. */
+             if (strcmp(key, "HOME") == 0)
+        diff --git a/base/gp_unix.c b/base/gp_unix.c
+        index 7654321..fghijkl 100644
+        --- a/base/gp_unix.c
+        +++ b/base/gp_unix.c
+        @@ -83,7 +83,7 @@
+         FILE *
+         gp_fopen(const char *fname, const char *mode)
+         {
+        -    return fopen(fname, mode);
+        +    return NULL; // 简化处理，实际需实现鸿蒙文件I/O
+         }
+        EOPATCH
+        
+        git apply ohos.patch
+        
+        ./autogen.sh
+        ./configure \
+          --host=aarch64-linux-ohos \
+          --prefix=/gs-build \
+          --enable-shared \
+          --disable-cups \
+          --with-drivers=PCLm \
+          CC="$OHOS_NDK_HOME/llvm/bin/aarch64-linux-ohos-clang" \
+          CXX="$OHOS_NDK_HOME/llvm/bin/aarch64-linux-ohos-clang++" \
+          CFLAGS="-fPIC -O3 -nostdinc -I$OHOS_NDK_HOME/sysroot/usr/include" \
+          LDFLAGS="-L$OHOS_NDK_HOME/sysroot/usr/lib -lz -lpng -lfreetype"
+        
+        make -j$(nproc)
+        make install
 
-      - name: 上传 SO Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: so-packages
-          path: |
-            entry/src/main/resources/libs/arm64-v8a/gs_napi.so
-            entry/src/main/resources/libs/arm64-v8a/libgs.so
+    # ========== 产物打包 ==========
+    - name: Package artifacts
+      run: |
+        mkdir -p artifacts/libs/arm64-v8a
+        cp /gs-build/lib/libgs.so artifacts/libs/arm64-v8a/
+        
+        # 添加版本信息
+        echo "BuildTime: $(date -u)" > artifacts/build-info.txt
+        $OHOS_NDK_HOME/llvm/bin/llvm-readelf -h artifacts/libs/arm64-v8a/libgs.so >> artifacts/build-info.txt
+
+    - name: Upload artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ohos-ghostscript
+        path: artifacts
