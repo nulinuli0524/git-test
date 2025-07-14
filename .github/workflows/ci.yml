@@ -80,7 +80,7 @@ jobs:
       - name: Build pdf2pclm.so (Wrapper)
         run: |
           cd wrapper
-          mkdir build && cd build
+          mkdir -p build && cd build
           cmake .. \
             -DGS_ROOT=${{ github.workspace }}/ghostpdl/build_output/usr/local/ghostscript \
             -DCMAKE_SYSTEM_NAME=Linux \
