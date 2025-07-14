@@ -12,64 +12,42 @@ jobs:
       GS_VERSION: ${{ secrets.GS_VERSION }}
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-      - name: Install system dependencies
+      - name: Install deps
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            git unzip p7zip-full autoconf automake libtool \
-            cmake python3 pkg-config \
+          sudo apt-get install -y git unzip p7zip-full \
+            autoconf automake libtool cmake pkg-config \
             zlib1g-dev libpng-dev libtiff5-dev
 
       - name: Download & extract HMOS CLI
         run: |
           wget -O hmos-cli.zip "${CLI_URL}"
-          mkdir extracted
-          unzip -q hmos-cli.zip -d extracted
-          native_dir=$(find extracted -type d -name native | head -n1)
-          root=${native_dir%/native}
-          mv "$root" hmos-cli
+          unzip -q hmos-cli.zip -d hmos
+          # …设环境变量 cross-compiler …
 
-      - name: Set up cross-compile env
-        run: |
-          tool_bin=$(find hmos-cli/native/llvm -type f -name clang | head -n1)
-          tool_dir=$(dirname "$tool_bin")
-          echo "PATH=${tool_dir}:$PWD/hmos-cli/native/build-tools/bin:${PATH}" >> $GITHUB_ENV
-          echo "CC=clang"           >> $GITHUB_ENV
-          echo "CXX=clang++"        >> $GITHUB_ENV
-          echo "AR=llvm-ar"         >> $GITHUB_ENV
-          echo "RANLIB=llvm-ranlib" >> $GITHUB_ENV
-          echo "SYSROOT=$PWD/hmos-cli/native/sysroot" >> $GITHUB_ENV
-          echo "CFLAGS=--sysroot=$SYSROOT -fPIC -O2"    >> $GITHUB_ENV
-          echo "CXXFLAGS=--sysroot=$SYSROOT -fPIC -O2"  >> $GITHUB_ENV
-          echo "LDFLAGS=--sysroot=$SYSROOT"             >> $GITHUB_ENV
-
-      - name: Build libgs.so (Ghostscript)
+      - name: Build libgs.so
         run: |
           git clone https://git.ghostscript.com/ghostpdl.git
           cd ghostpdl
-          if [ -n "$GS_VERSION" ]; then
-            git fetch --tags
-            git checkout "$GS_VERSION"
-          fi
+          [ -n "$GS_VERSION" ] && git fetch --tags && git checkout "$GS_VERSION"
           ./autogen.sh
-          ./configure \
-            --host=aarch64-unknown-linux-gnu \
-            --disable-gtk \
-            --disable-fontconfig \
-            --disable-compile-inits \
-            --with-device-list="pclm" \
+          ./configure --host=aarch64-unknown-linux-gnu \
+            --disable-gtk --disable-fontconfig --disable-compile-inits \
+            --with-device-list=pclm \
             CC=$CC CXX=$CXX \
-            CFLAGS="$CFLAGS" \
-            CXXFLAGS="$CXXFLAGS" \
-            LDFLAGS="$LDFLAGS"
+            CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS" LDFLAGS="$LDFLAGS"
           make -j$(nproc)
           make install DESTDIR=$(pwd)/build_output
+
+      - name: Debug install tree
+        run: |
+          echo "=== build_output/usr/local ==="
+          find ghostpdl/build_output/usr/local -maxdepth 2 | sed 's/^/→ /'
 
       - name: Upload libgs.so
         uses: actions/upload-artifact@v4
         with:
           name: ghostscript-libs
-          path: ghostpdl/build_output/usr/local/ghostscript/lib/libgs.so
+          path: ghostpdl/build_output/usr/local/lib/libgs.so
