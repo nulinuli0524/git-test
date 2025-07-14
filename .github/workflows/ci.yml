@@ -12,42 +12,62 @@ jobs:
       GS_VERSION: ${{ secrets.GS_VERSION }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
 
-      - name: Install deps
+      - name: 🛠️ Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y git unzip p7zip-full \
-            autoconf automake libtool cmake pkg-config \
-            zlib1g-dev libpng-dev libtiff5-dev
+          sudo apt-get install -y \
+            git unzip p7zip-full autoconf automake libtool \
+            cmake pkg-config zlib1g-dev libpng-dev libtiff5-dev
 
-      - name: Download & extract HMOS CLI
+      - name: 📦 Download & extract HMOS CLI
         run: |
           wget -O hmos-cli.zip "${CLI_URL}"
           unzip -q hmos-cli.zip -d hmos
-          # …设环境变量 cross-compiler …
+          native_dir=$(find hmos -type d -name native | head -n1)
+          llvm_bin=$(find "$native_dir" -type f -name clang | head -n1)
+          llvm_dir=$(dirname "$llvm_bin")
 
-      - name: Build libgs.so
+          echo "PATH=$llvm_dir:$PWD/hmos/native/build-tools/bin:$PATH" >> $GITHUB_ENV
+          echo "CC=clang" >> $GITHUB_ENV
+          echo "CXX=clang++" >> $GITHUB_ENV
+          echo "AR=llvm-ar" >> $GITHUB_ENV
+          echo "RANLIB=llvm-ranlib" >> $GITHUB_ENV
+          echo "SYSROOT=$PWD/hmos/native/sysroot" >> $GITHUB_ENV
+          echo "CFLAGS=--sysroot=$SYSROOT -fPIC -O2" >> $GITHUB_ENV
+          echo "CXXFLAGS=--sysroot=$SYSROOT -fPIC -O2" >> $GITHUB_ENV
+          echo "LDFLAGS=--sysroot=$SYSROOT" >> $GITHUB_ENV
+
+      - name: 🔧 Build libgs.so with Ghostscript
         run: |
           git clone https://git.ghostscript.com/ghostpdl.git
           cd ghostpdl
-          [ -n "$GS_VERSION" ] && git fetch --tags && git checkout "$GS_VERSION"
+          if [ -n "$GS_VERSION" ]; then
+            git fetch --tags && git checkout "$GS_VERSION"
+          fi
           ./autogen.sh
-          ./configure --host=aarch64-unknown-linux-gnu \
-            --disable-gtk --disable-fontconfig --disable-compile-inits \
+          ./configure \
+            --host=aarch64-unknown-linux-gnu \
+            --disable-gtk \
+            --disable-fontconfig \
+            --disable-compile-inits \
             --with-device-list=pclm \
+            --prefix=$(pwd)/build_output/usr/local \
             CC=$CC CXX=$CXX \
             CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS" LDFLAGS="$LDFLAGS"
           make -j$(nproc)
           make install DESTDIR=$(pwd)/build_output
 
-      - name: Debug install tree
+      - name: 📂 Locate and verify built libgs.so
         run: |
-          echo "=== build_output/usr/local ==="
-          find ghostpdl/build_output/usr/local -maxdepth 2 | sed 's/^/→ /'
+          echo "🔍 Searching for libgs.so..."
+          find ghostpdl/build_output -name libgs.so | sed 's/^/→ /'
 
-      - name: Upload libgs.so
+      - name: 🚚 Upload libgs.so artifact
         uses: actions/upload-artifact@v4
         with:
           name: ghostscript-libs
-          path: ghostpdl/build_output/usr/local/lib/libgs.so
+          path: |
+            ghostpdl/build_output/**/libgs.so
