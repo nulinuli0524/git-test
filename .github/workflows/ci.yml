@@ -8,9 +8,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    # 仅需在这里声明不相互依赖的环境变量
     env:
-      CLI_URL: ${{ secrets.HMOS_CLI_URL }}
+      CLI_URL: "https://developer.huawei.com/consumer/cn/download/…/command-line-tools-linux-2.3.3.1.tar.gz"
 
     steps:
       - name: Checkout code
@@ -30,7 +29,6 @@ jobs:
 
       - name: Set up cross-compile environment
         run: |
-          # 计算各个目录并写入 GITHUB_ENV
           echo "OHOS_NATIVE=${{ github.workspace }}/hmos-cli/native" >> $GITHUB_ENV
           echo "SYSROOT=${{ github.workspace }}/hmos-cli/native/sysroot" >> $GITHUB_ENV
           echo "PATH=${{ github.workspace }}/hmos-cli/native/llvm/aarch64/bin:${{ github.workspace }}/hmos-cli/native/build-tools/bin:$PATH" >> $GITHUB_ENV
@@ -72,7 +70,7 @@ jobs:
           make -j$(nproc)
 
       - name: Upload artifacts
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: pclm-libs
           path: |
