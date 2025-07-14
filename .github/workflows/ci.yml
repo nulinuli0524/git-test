@@ -9,7 +9,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      CLI_URL: "https://developer.huawei.com/consumer/cn/download/…/command-line-tools-linux-2.3.3.1.tar.gz"
+      CLI_URL: "https://contentcenter-vali-drcn.dbankcdn.cn/pvt_2/DeveloperAlliance_package_901_9/f6/v3/s4KXxlxTQBamLt4g2wT0Hg/commandline-tools-linux-x64-5.1.0.840.zip?HW-CC-KV=V1&HW-CC-Date=20250714T071922Z&HW-CC-Expire=7200&HW-CC-Sign=0674BDEFBA94EE12AFF3F869D9A66610850D7E1949BE37E1ABD2AD01AE61AE03"
 
     steps:
       - name: Checkout code
