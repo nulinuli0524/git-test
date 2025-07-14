@@ -8,6 +8,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
+      # 在仓库 Settings → Secrets 里设置 HMOS_CLI_URL 为 v5.1.0 直链
       CLI_URL: "https://contentcenter-vali-drcn.dbankcdn.cn/pvt_2/DeveloperAlliance_package_901_9/f6/v3/s4KXxlxTQBamLt4g2wT0Hg/commandline-tools-linux-x64-5.1.0.840.zip?HW-CC-KV=V1&HW-CC-Date=20250714T071922Z&HW-CC-Expire=7200&HW-CC-Sign=0674BDEFBA94EE12AFF3F869D9A66610850D7E1949BE37E1ABD2AD01AE61AE03"
 
     steps:
@@ -23,23 +24,22 @@ jobs:
             zlib1g-dev libpng-dev libtiff5-dev \
             libarchive-tools p7zip-full
 
-      - name: Download & unpack HMOS CLI
+      - name: Download & extract HMOS CLI
         run: |
           wget -O hmos-cli.tar.gz "${CLI_URL}"
+          mkdir extracted
 
-          # 优先用 bsdtar 解多段 gzip + tar
+          # 先尝试用 bsdtar 解多段 gzip + tar
           if bsdtar -tf hmos-cli.tar.gz &>/dev/null; then
-            bsdtar -xf hmos-cli.tar.gz
+            bsdtar -xf hmos-cli.tar.gz -C extracted
           else
-            echo "bsdtar failed, fallback to 7z"
-            mkdir hmos-cli
-            7z x hmos-cli.tar.gz -ohmos-cli
+            echo "bsdtar failed, falling back to 7z"
+            7z x hmos-cli.tar.gz -oextracted
           fi
 
-          # 如果解出的目录不是 hmos-cli，就重命名
-          if [ ! -d hmos-cli ]; then
-            mv command-line-tools-linux-* hmos-cli
-          fi
+          # 动态查找解出的子目录并重命名为 hmos-cli
+          dir=$(find extracted -mindepth 1 -maxdepth 1 -type d | head -n1)
+          mv "$dir" hmos-cli
 
       - name: Set up cross-compile environment
         run: |
