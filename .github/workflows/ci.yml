@@ -1,13 +1,12 @@
-name: Build PDF→PCLm Libraries
+name: Build Ghostscript for HarmonyOS
 
 on:
   push:
   pull_request:
 
 jobs:
-  build:
+  build-libgs:
     runs-on: ubuntu-latest
-
     env:
       CLI_URL: "https://contentcenter-vali-drcn.dbankcdn.cn/pvt_2/DeveloperAlliance_package_901_9/f6/v3/s4KXxlxTQBamLt4g2wT0Hg/commandline-tools-linux-x64-5.1.0.840.zip?HW-CC-KV=V1&HW-CC-Date=20250714T092621Z&HW-CC-Expire=7200&HW-CC-Sign=43C91A44AF943C8DCC41AE5DBA2CF54CE6A3EE23FA7DCAA91A67384C2C3E2FB1"
       GS_VERSION: ${{ secrets.GS_VERSION }}
@@ -16,12 +15,13 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Install dependencies
+      - name: Install system dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             git unzip p7zip-full autoconf automake libtool \
-            cmake python3 pkg-config zlib1g-dev libpng-dev libtiff5-dev file
+            cmake python3 pkg-config \
+            zlib1g-dev libpng-dev libtiff5-dev
 
       - name: Download & extract HMOS CLI
         run: |
@@ -32,14 +32,14 @@ jobs:
           root=${native_dir%/native}
           mv "$root" hmos-cli
 
-      - name: Locate & export cross toolchain
+      - name: Set up cross-compile env
         run: |
           tool_bin=$(find hmos-cli/native/llvm -type f -name clang | head -n1)
           tool_dir=$(dirname "$tool_bin")
           echo "PATH=${tool_dir}:$PWD/hmos-cli/native/build-tools/bin:${PATH}" >> $GITHUB_ENV
-          echo "CC=clang"   >> $GITHUB_ENV
-          echo "CXX=clang++">> $GITHUB_ENV
-          echo "AR=llvm-ar" >> $GITHUB_ENV
+          echo "CC=clang"           >> $GITHUB_ENV
+          echo "CXX=clang++"        >> $GITHUB_ENV
+          echo "AR=llvm-ar"         >> $GITHUB_ENV
           echo "RANLIB=llvm-ranlib" >> $GITHUB_ENV
           echo "SYSROOT=$PWD/hmos-cli/native/sysroot" >> $GITHUB_ENV
           echo "CFLAGS=--sysroot=$SYSROOT -fPIC -O2"    >> $GITHUB_ENV
@@ -62,38 +62,14 @@ jobs:
             --disable-compile-inits \
             --with-device-list="pclm" \
             CC=$CC CXX=$CXX \
-            CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS" LDFLAGS="$LDFLAGS"
+            CFLAGS="$CFLAGS" \
+            CXXFLAGS="$CXXFLAGS" \
+            LDFLAGS="$LDFLAGS"
           make -j$(nproc)
           make install DESTDIR=$(pwd)/build_output
 
-      - name: Debug Ghostscript psi tree
-        run: |
-          echo "=== psi 目录结构 ==="
-          find ghostpdl/build_output/usr/local/ghostscript/psi -maxdepth 2 | sed 's/^/→ /'
-
-      - name: Build pdf2pclm.so (Wrapper)
-        run: |
-          cd wrapper
-          # 清理旧缓存
-          rm -rf build
-          mkdir build && cd build
-
-          # 硬加 psi include 路径
-          cmake .. \
-            -DGS_ROOT=${{ github.workspace }}/ghostpdl/build_output/usr/local/ghostscript \
-            -DCMAKE_SYSROOT=$SYSROOT \
-            -DCMAKE_SYSTEM_NAME=Linux \
-            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
-            -DCMAKE_C_COMPILER=$CC \
-            -DCMAKE_C_FLAGS="$CFLAGS -I${{ github.workspace }}/ghostpdl/build_output/usr/local/ghostscript/psi" \
-            -DCMAKE_SHARED_LINKER_FLAGS="$LDFLAGS" \
-            -DCMAKE_FIND_ROOT_PATH="$SYSROOT"
-          make -j$(nproc)
-
-      - name: Upload artifacts
+      - name: Upload libgs.so
         uses: actions/upload-artifact@v4
         with:
-          name: pclm-libs
-          path: |
-            ghostpdl/build_output/usr/local/ghostscript/lib/libgs.so
-            wrapper/build/libpdf2pclm.so
+          name: ghostscript-libs
+          path: ghostpdl/build_output/usr/local/ghostscript/lib/libgs.so
