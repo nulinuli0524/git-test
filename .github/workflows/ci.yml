@@ -7,7 +7,6 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     env:
       CLI_URL: "https://contentcenter-vali-drcn.dbankcdn.cn/pvt_2/DeveloperAlliance_package_901_9/f6/v3/s4KXxlxTQBamLt4g2wT0Hg/commandline-tools-linux-x64-5.1.0.840.zip?HW-CC-KV=V1&HW-CC-Date=20250714T071922Z&HW-CC-Expire=7200&HW-CC-Sign=0674BDEFBA94EE12AFF3F869D9A66610850D7E1949BE37E1ABD2AD01AE61AE03"
       GS_VERSION: ${{ secrets.GS_VERSION }}
@@ -21,25 +20,22 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             git unzip p7zip-full autoconf automake libtool \
-            cmake python3 pkg-config \
-            zlib1g-dev libpng-dev libtiff5-dev file
+            cmake python3 pkg-config zlib1g-dev libpng-dev libtiff5-dev file
 
-      - name: Download HMOS CLI
-        run: wget -O hmos-cli.zip "${CLI_URL}"
-
-      - name: Extract HMOS CLI
+      - name: Download & extract HMOS CLI
         run: |
+          wget -O hmos-cli.zip "${CLI_URL}"
           mkdir extracted
           unzip -q hmos-cli.zip -d extracted
           native_dir=$(find extracted -type d -name native | head -n1)
           root=${native_dir%/native}
           mv "$root" hmos-cli
 
-      - name: Locate & export toolchain
+      - name: Locate cross tools & set env
         run: |
-          tool_bin=$(find hmos-cli/native/llvm -type f -executable -name clang | head -n1)
+          tool_bin=$(find hmos-cli/native/llvm -type f -name clang | head -n1)
           tool_dir=$(dirname "$tool_bin")
-          echo "PATH=${tool_dir}:$PWD/hmos-cli/native/build-tools/bin:$PATH" >> $GITHUB_ENV
+          echo "PATH=${tool_dir}:$PWD/hmos-cli/native/build-tools/bin:${PATH}" >> $GITHUB_ENV
           echo "CC=clang"   >> $GITHUB_ENV
           echo "CXX=clang++">> $GITHUB_ENV
           echo "AR=llvm-ar" >> $GITHUB_ENV
@@ -48,14 +44,6 @@ jobs:
           echo "CFLAGS=--sysroot=$SYSROOT -fPIC -O2"    >> $GITHUB_ENV
           echo "CXXFLAGS=--sysroot=$SYSROOT -fPIC -O2"  >> $GITHUB_ENV
           echo "LDFLAGS=--sysroot=$SYSROOT"             >> $GITHUB_ENV
-
-      - name: Debug toolchain
-        run: |
-          echo "CC = $CC"
-          echo "PATH = $PATH"
-          echo 'int main(){}' > test.c
-          $CC $CFLAGS test.c $LDFLAGS -o test.bin
-          file test.bin
 
       - name: Build libgs.so (Ghostscript)
         run: |
@@ -76,6 +64,13 @@ jobs:
             CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS" LDFLAGS="$LDFLAGS"
           make -j$(nproc)
           make install DESTDIR=$(pwd)/build_output
+
+      - name: Debug Ghostscript include tree
+        run: |
+          echo "=== GS include ==="
+          find ghostpdl/build_output/usr/local/ghostscript/include -type f | sed 's/^/→ /'
+          echo "=== GS lib files ==="
+          find ghostpdl/build_output/usr/local/ghostscript/lib -maxdepth 1 -type f | sed 's/^/→ /'
 
       - name: Build pdf2pclm.so (Wrapper)
         run: |
