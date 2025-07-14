@@ -7,6 +7,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     env:
       CLI_URL: "https://contentcenter-vali-drcn.dbankcdn.cn/pvt_2/DeveloperAlliance_package_901_9/f6/v3/s4KXxlxTQBamLt4g2wT0Hg/commandline-tools-linux-x64-5.1.0.840.zip?HW-CC-KV=V1&HW-CC-Date=20250714T092621Z&HW-CC-Expire=7200&HW-CC-Sign=43C91A44AF943C8DCC41AE5DBA2CF54CE6A3EE23FA7DCAA91A67384C2C3E2FB1"
       GS_VERSION: ${{ secrets.GS_VERSION }}
@@ -20,7 +21,8 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             git unzip p7zip-full autoconf automake libtool \
-            cmake python3 pkg-config zlib1g-dev libpng-dev libtiff5-dev file
+            cmake python3 pkg-config \
+            zlib1g-dev libpng-dev libtiff5-dev file
 
       - name: Download & extract HMOS CLI
         run: |
@@ -31,7 +33,7 @@ jobs:
           root=${native_dir%/native}
           mv "$root" hmos-cli
 
-      - name: Locate cross tools & set env
+      - name: Locate & export cross toolchain
         run: |
           tool_bin=$(find hmos-cli/native/llvm -type f -name clang | head -n1)
           tool_dir=$(dirname "$tool_bin")
@@ -67,10 +69,8 @@ jobs:
 
       - name: Debug Ghostscript include tree
         run: |
-          echo "=== GS include ==="
-          find ghostpdl/build_output/usr/local/ghostscript/include -type f | sed 's/^/→ /'
-          echo "=== GS lib files ==="
-          find ghostpdl/build_output/usr/local/ghostscript/lib -maxdepth 1 -type f | sed 's/^/→ /'
+          echo "=== 包含 iapi.h、imemory.h 的 psi 目录 ==="
+          find ghostpdl/build_output/usr/local/ghostscript/psi -type f | sed 's/^/→ /'
 
       - name: Build pdf2pclm.so (Wrapper)
         run: |
