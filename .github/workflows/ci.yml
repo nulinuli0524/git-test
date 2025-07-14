@@ -8,9 +8,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      # 在 Settings → Secrets 里定义这个变量，指向 HMOS CLI v5.1.0 ZIP 直链
       CLI_URL: "https://contentcenter-vali-drcn.dbankcdn.cn/pvt_2/DeveloperAlliance_package_901_9/f6/v3/s4KXxlxTQBamLt4g2wT0Hg/commandline-tools-linux-x64-5.1.0.840.zip?HW-CC-KV=V1&HW-CC-Date=20250714T071922Z&HW-CC-Expire=7200&HW-CC-Sign=0674BDEFBA94EE12AFF3F869D9A66610850D7E1949BE37E1ABD2AD01AE61AE03"
-      # 可选：为 Ghostscript 指定 tag（如 ghostpdl-9.55.0），留空则用默认分支
       GS_VERSION: ${{ secrets.GS_VERSION }}
 
     steps:
@@ -21,10 +19,11 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            git unzip p7zip-full libarchive-tools \
+            git unzip p7zip-full \
             autoconf automake libtool \
             cmake python3 pkg-config \
-            zlib1g-dev libpng-dev libtiff5-dev
+            zlib1g-dev libpng-dev libtiff5-dev \
+            file
 
       - name: Download HMOS CLI
         run: wget -O hmos-cli.zip "${CLI_URL}"
@@ -34,59 +33,53 @@ jobs:
           mkdir extracted
           unzip -q hmos-cli.zip -d extracted
 
-      - name: Debug extracted tree
-        run: |
-          echo "=== extracted/ 下的结构 ==="
-          find extracted | sed 's/^/→ /'
+      - name: Debug extracted/ tree
+        run: find extracted | sed 's/^/→ /'
 
       - name: Locate HMOS CLI root
         run: |
           native_dir=$(find extracted -type d -name native | head -n1)
           echo "Found native dir: $native_dir"
           if [ -z "$native_dir" ]; then
-            echo "ERROR: 未找到 native 目录，解包结果："
+            echo "ERROR: native/ not found"
             find extracted
             exit 1
           fi
           root=${native_dir%/native}
           mv "$root" hmos-cli
 
-      - name: Debug hmos-cli tree
-        run: |
-          echo "=== hmos-cli/ 下的结构 ==="
-          find hmos-cli | sed 's/^/→ /'
+      - name: Debug hmos-cli/ tree
+        run: find hmos-cli | sed 's/^/→ /'
 
-      - name: Locate cross compilers & set env
+      - name: Locate cross tools & set env
         run: |
-          cc_bin=$(find hmos-cli/native/llvm -type f -executable -name "*gcc*" | head -n1)
-          cxx_bin=$(find hmos-cli/native/llvm -type f -executable -name "*g++*" | head -n1)
-          ar_bin=$(find hmos-cli/native/llvm -type f -executable -name "*-ar" | head -n1)
-          ranlib_bin=$(find hmos-cli/native/llvm -type f -executable -name "*ranlib*" | head -n1)
+          # 找到 LLVM 目录下的 clang/clang++
+          tool_bin=$(find hmos-cli/native/llvm -type f -executable -name clang | head -n1)
+          tool_dir=$(dirname "$tool_bin")
+          echo "Toolchain dir: $tool_dir"
 
-          echo "GCC: $cc_bin"
-          echo "G++: $cxx_bin"
-          echo "AR:  $ar_bin"
-          echo "RANLIB: $ranlib_bin"
-          
-          # 写入后续步骤可用的环境变量
-          echo "CC=$cc_bin"        >> $GITHUB_ENV
-          echo "CXX=$cxx_bin"      >> $GITHUB_ENV
-          echo "AR=$ar_bin"        >> $GITHUB_ENV
-          echo "RANLIB=$ranlib_bin">> $GITHUB_ENV
+          # 把 tool_dir 与 build-tools/bin 加入 PATH（展开当前 $PATH）
+          echo "PATH=${tool_dir}:$PWD/hmos-cli/native/build-tools/bin:${PATH}" >> $GITHUB_ENV
+
+          # 设置工具链指令
+          echo "CC=clang"   >> $GITHUB_ENV
+          echo "CXX=clang++">> $GITHUB_ENV
+          echo "AR=llvm-ar" >> $GITHUB_ENV
+          echo "RANLIB=llvm-ranlib" >> $GITHUB_ENV
+
+          # 基础交叉编译参数
           echo "SYSROOT=$PWD/hmos-cli/native/sysroot" >> $GITHUB_ENV
-          echo "CFLAGS=--sysroot=$PWD/hmos-cli/native/sysroot -fPIC -O2" >> $GITHUB_ENV
-          echo "CXXFLAGS=--sysroot=$PWD/hmos-cli/native/sysroot -fPIC -O2" >> $GITHUB_ENV
-          echo "LDFLAGS=--sysroot=$PWD/hmos-cli/native/sysroot" >> $GITHUB_ENV
-          echo "PATH=$PWD/hmos-cli/native/llvm/aarch64/bin:$PWD/hmos-cli/native/build-tools/bin:\$PATH" >> $GITHUB_ENV
+          echo "CFLAGS=--sysroot=$SYSROOT -fPIC -O2"    >> $GITHUB_ENV
+          echo "CXXFLAGS=--sysroot=$SYSROOT -fPIC -O2"  >> $GITHUB_ENV
+          echo "LDFLAGS=--sysroot=$SYSROOT"             >> $GITHUB_ENV
 
       - name: Debug toolchain
         run: |
-          echo "CC = $CC"
-          echo "SYSROOT = $SYSROOT"
-          cat > test.c << 'EOF'
-          int main() { return 0; }
-          EOF
-          $CC $CFLAGS test.c $LDFLAGS -o test.bin && file test.bin
+          echo "CC   = $CC"
+          echo "PATH = $PATH"
+          echo 'int main(){}' > test.c
+          $CC $CFLAGS test.c $LDFLAGS -o test.bin
+          file test.bin
 
       - name: Build libgs.so (Ghostscript)
         run: |
@@ -103,20 +96,21 @@ jobs:
             --disable-fontconfig \
             --disable-compile-inits \
             --with-device-list="pclm" \
-            CC="$CC" CXX="$CXX" CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS" LDFLAGS="$LDFLAGS"
+            CC=$CC CXX=$CXX \
+            CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS" LDFLAGS="$LDFLAGS"
           make -j$(nproc)
           make install DESTDIR=$(pwd)/build_output
 
       - name: Build pdf2pclm.so (Wrapper)
         run: |
           cd wrapper
-          mkdir -p build && cd build
+          mkdir build && cd build
           cmake .. \
             -DCMAKE_SYSTEM_NAME=Linux \
             -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
-            -DCMAKE_C_COMPILER="$CC" \
-            -DCMAKE_CXX_COMPILER="$CXX" \
-            -DCMAKE_FIND_ROOT_PATH="$SYSROOT"
+            -DCMAKE_C_COMPILER=$CC \
+            -DCMAKE_CXX_COMPILER=$CXX \
+            -DCMAKE_FIND_ROOT_PATH=$SYSROOT
           make -j$(nproc)
 
       - name: Upload artifacts
