@@ -8,7 +8,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      CLI_URL: "https://contentcenter-vali-drcn.dbankcdn.cn/pvt_2/DeveloperAlliance_package_901_9/f6/v3/s4KXxlxTQBamLt4g2wT0Hg/commandline-tools-linux-x64-5.1.0.840.zip?HW-CC-KV=V1&HW-CC-Date=20250714T071922Z&HW-CC-Expire=7200&HW-CC-Sign=0674BDEFBA94EE12AFF3F869D9A66610850D7E1949BE37E1ABD2AD01AE61AE03"
+      CLI_URL: "https://contentcenter-vali-drcn.dbankcdn.cn/pvt_2/DeveloperAlliance_package_901_9/f6/v3/s4KXxlxTQBamLt4g2wT0Hg/commandline-tools-linux-x64-5.1.0.840.zip?HW-CC-KV=V1&HW-CC-Date=20250714T092621Z&HW-CC-Expire=7200&HW-CC-Sign=43C91A44AF943C8DCC41AE5DBA2CF54CE6A3EE23FA7DCAA91A67384C2C3E2FB1"
       GS_VERSION: ${{ secrets.GS_VERSION }}
 
     steps:
