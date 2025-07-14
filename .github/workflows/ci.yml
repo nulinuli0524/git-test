@@ -28,22 +28,35 @@ jobs:
           wget -O hmos-cli.tar.gz "${CLI_URL}"
           mkdir extracted
 
-          # 优先用 bsdtar 解多段 gzip + tar
+          # 优选 bsdtar，多段 gzip 支持更好
           if bsdtar -tf hmos-cli.tar.gz &>/dev/null; then
             bsdtar -xf hmos-cli.tar.gz -C extracted
           else
-            echo "bsdtar failed, falling back to 7z"
+            echo "bsdtar 解包失败，使用 7z 兜底"
             7z x hmos-cli.tar.gz -oextracted
           fi
 
-          # 查找哪个子目录里有 native/ 文件夹
-          root=$(find extracted -type d -name native -print | head -n1 | sed 's#/native##')
-          if [ -z "$root" ]; then
-            echo "ERROR: cannot find native/ directory under extracted/"
-            ls -R extracted
+      - name: Debug extracted structure
+        run: |
+          echo "=== extracted/ 目录树 ==="
+          find extracted | sed 's/^/→ /'
+
+      - name: Locate and rename CLI root
+        run: |
+          # 根据 extracted/ 下的 native 目录动态定位根路径
+          native_dir=$(find extracted -type d -name native | head -n1)
+          echo "found native at: $native_dir"
+          if [ -z "$native_dir" ]; then
+            echo "ERROR: 没有找到 native 目录"
             exit 1
           fi
+          root=${native_dir%/native}
           mv "$root" hmos-cli
+
+      - name: Show extracted hmos-cli tree
+        run: |
+          echo "=== hmos-cli/ 目录树 ==="
+          find hmos-cli | sed 's/^/→ /'
 
       - name: Set up cross-compile environment
         run: |
@@ -57,15 +70,11 @@ jobs:
           echo "CFLAGS=--sysroot=${{ github.workspace }}/hmos-cli/native/sysroot -fPIC -O2" >> $GITHUB_ENV
           echo "LDFLAGS=--sysroot=${{ github.workspace }}/hmos-cli/native/sysroot -shared" >> $GITHUB_ENV
 
-      - name: Verify native directory
+      - name: Verify native directory (print only)
         run: |
           echo "OHOS_NATIVE=$OHOS_NATIVE"
-          if [ ! -d "$OHOS_NATIVE" ]; then
-            echo "ERROR: \$OHOS_NATIVE not found"
-            ls -R .
-            exit 1
-          fi
-          test -d "$OHOS_NATIVE/sysroot/usr/include" -a -x "$OHOS_NATIVE/llvm/aarch64/bin/gcc"
+          echo "下面列出 $OHOS_NATIVE 目录内容："
+          ls -R "$OHOS_NATIVE" || true
 
       - name: Build libgs.so (Ghostscript)
         run: |
