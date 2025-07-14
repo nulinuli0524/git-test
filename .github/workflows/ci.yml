@@ -1,18 +1,26 @@
 name: Build PDF→PCLm Libraries
 
+# 触发条件：push 到 main 分支或发起 PR
 on:
   push:
-    branches: [ main ]
+    branches:
+      - main
   pull_request:
+    branches:
+      - main
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     env:
       CLI_URL: ${{ secrets.HMOS_CLI_URL }}
       OHOS_NATIVE: ${{ github.workspace }}/hmos-cli/native
       SYSROOT: ${{ env.OHOS_NATIVE }}/sysroot
+
+      # 把交叉编译工具加入 PATH
       PATH: ${{ env.OHOS_NATIVE }}/llvm/aarch64/bin:${{ env.OHOS_NATIVE }}/build-tools/bin:$PATH
+
       CC: aarch64-unknown-linux-gnu-gcc
       CXX: aarch64-unknown-linux-gnu-g++
       AR: aarch64-unknown-linux-gnu-ar
@@ -36,7 +44,7 @@ jobs:
           wget -O hmos-cli.tar.gz "${CLI_URL}"
           tar -zxf hmos-cli.tar.gz -C ${{ github.workspace }}
 
-      - name: Verify native目录
+      - name: Verify native 目录
         run: |
           test -d "${{ env.OHOS_NATIVE }}/sysroot/usr/include"
           test -x "${{ env.OHOS_NATIVE }}/llvm/aarch64/bin/gcc"
