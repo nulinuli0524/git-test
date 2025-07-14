@@ -8,7 +8,11 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
+      # HMOS CLI download link, set in your repo Secrets
       CLI_URL: "https://contentcenter-vali-drcn.dbankcdn.cn/pvt_2/DeveloperAlliance_package_901_9/f6/v3/s4KXxlxTQBamLt4g2wT0Hg/commandline-tools-linux-x64-5.1.0.840.zip?HW-CC-KV=V1&HW-CC-Date=20250714T071922Z&HW-CC-Expire=7200&HW-CC-Sign=0674BDEFBA94EE12AFF3F869D9A66610850D7E1949BE37E1ABD2AD01AE61AE03"
+      # Optional: set this to a real Ghostscript tag (e.g. "ghostpdl-9.55.0") in Secrets,
+      # or leave empty to build default branch.
+      GS_VERSION: ${{ secrets.GS_VERSION }}
 
     steps:
       - name: Checkout code
@@ -27,38 +31,24 @@ jobs:
         run: |
           wget -O hmos-cli.tar.gz "${CLI_URL}"
           mkdir extracted
-
-          # 优选 bsdtar，多段 gzip 支持更好
           if bsdtar -tf hmos-cli.tar.gz &>/dev/null; then
             bsdtar -xf hmos-cli.tar.gz -C extracted
           else
-            echo "bsdtar 解包失败，使用 7z 兜底"
             7z x hmos-cli.tar.gz -oextracted
           fi
 
-      - name: Debug extracted structure
+      - name: Locate HMOS CLI root
         run: |
-          echo "=== extracted/ 目录树 ==="
-          find extracted | sed 's/^/→ /'
-
-      - name: Locate and rename CLI root
-        run: |
-          # 根据 extracted/ 下的 native 目录动态定位根路径
           native_dir=$(find extracted -type d -name native | head -n1)
-          echo "found native at: $native_dir"
           if [ -z "$native_dir" ]; then
-            echo "ERROR: 没有找到 native 目录"
+            echo "ERROR: cannot find native/ in extracted/"
+            find extracted
             exit 1
           fi
           root=${native_dir%/native}
           mv "$root" hmos-cli
 
-      - name: Show extracted hmos-cli tree
-        run: |
-          echo "=== hmos-cli/ 目录树 ==="
-          find hmos-cli | sed 's/^/→ /'
-
-      - name: Set up cross-compile environment
+      - name: Set up cross-compile env
         run: |
           echo "OHOS_NATIVE=${{ github.workspace }}/hmos-cli/native" >> $GITHUB_ENV
           echo "SYSROOT=${{ github.workspace }}/hmos-cli/native/sysroot" >> $GITHUB_ENV
@@ -67,20 +57,20 @@ jobs:
           echo "CXX=aarch64-unknown-linux-gnu-g++" >> $GITHUB_ENV
           echo "AR=aarch64-unknown-linux-gnu-ar" >> $GITHUB_ENV
           echo "RANLIB=aarch64-unknown-linux-gnu-ranlib" >> $GITHUB_ENV
-          echo "CFLAGS=--sysroot=${{ github.workspace }}/hmos-cli/native/sysroot -fPIC -O2" >> $GITHUB_ENV
-          echo "LDFLAGS=--sysroot=${{ github.workspace }}/hmos-cli/native/sysroot -shared" >> $GITHUB_ENV
-
-      - name: Verify native directory (print only)
-        run: |
-          echo "OHOS_NATIVE=$OHOS_NATIVE"
-          echo "下面列出 $OHOS_NATIVE 目录内容："
-          ls -R "$OHOS_NATIVE" || true
+          echo "CFLAGS=--sysroot=$SYSROOT -fPIC -O2" >> $GITHUB_ENV
+          echo "LDFLAGS=--sysroot=$SYSROOT -shared" >> $GITHUB_ENV
 
       - name: Build libgs.so (Ghostscript)
         run: |
           git clone https://git.ghostscript.com/ghostpdl.git
           cd ghostpdl
-          git checkout 9.55.0
+
+          # 如果你在 Secrets 里设置了 GS_VERSION，比如 "ghostpdl-9.55.0"，下面会切换到该 tag
+          if [ -n "$GS_VERSION" ]; then
+            git fetch --tags
+            git checkout "$GS_VERSION"
+          fi
+
           ./autogen.sh
           ./configure \
             --host=aarch64-unknown-linux-gnu \
