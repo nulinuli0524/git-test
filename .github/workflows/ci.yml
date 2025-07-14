@@ -7,12 +7,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+
     env:
-      # HMOS CLI download link, set in your repo Secrets
       CLI_URL: "https://contentcenter-vali-drcn.dbankcdn.cn/pvt_2/DeveloperAlliance_package_901_9/f6/v3/s4KXxlxTQBamLt4g2wT0Hg/commandline-tools-linux-x64-5.1.0.840.zip?HW-CC-KV=V1&HW-CC-Date=20250714T071922Z&HW-CC-Expire=7200&HW-CC-Sign=0674BDEFBA94EE12AFF3F869D9A66610850D7E1949BE37E1ABD2AD01AE61AE03"
-      # Optional: set this to a real Ghostscript tag (e.g. "ghostpdl-9.55.0") in Secrets,
-      # or leave empty to build default branch.
-      GS_VERSION: ${{ secrets.GS_VERSION }}
+      GS_VERSION: ${{ secrets.GS_VERSION }}    # 可选，留空则使用默认分支
 
     steps:
       - name: Checkout code
@@ -37,35 +35,56 @@ jobs:
             7z x hmos-cli.tar.gz -oextracted
           fi
 
-      - name: Locate HMOS CLI root
+      - name: Locate and normalize hmos-cli
         run: |
+          # 找到包含 native/ 的目录
           native_dir=$(find extracted -type d -name native | head -n1)
           if [ -z "$native_dir" ]; then
-            echo "ERROR: cannot find native/ in extracted/"
+            echo "ERROR: 未找到 native 目录，解包后的结构："
             find extracted
             exit 1
           fi
           root=${native_dir%/native}
           mv "$root" hmos-cli
 
-      - name: Set up cross-compile env
+      - name: Locate cross toolchain and set PATH
+        run: |
+          # 在 hmos-cli/native 中查找 gcc 二进制
+          cc_bin=$(find hmos-cli/native -type f -name "*gcc" | grep aarch64 | head -n1)
+          if [ -z "$cc_bin" ]; then
+            echo "ERROR: 未找到 aarch64 GCC"
+            exit 1
+          fi
+          cc_dir=$(dirname "$cc_bin")
+          echo "Found cross-compiler in $cc_dir"
+          echo "PATH=$cc_dir:$PATH" >> $GITHUB_ENV
+
+      - name: Set up cross-compile environment
         run: |
           echo "OHOS_NATIVE=${{ github.workspace }}/hmos-cli/native" >> $GITHUB_ENV
           echo "SYSROOT=${{ github.workspace }}/hmos-cli/native/sysroot" >> $GITHUB_ENV
-          echo "PATH=${{ github.workspace }}/hmos-cli/native/llvm/aarch64/bin:${{ github.workspace }}/hmos-cli/native/build-tools/bin:$PATH" >> $GITHUB_ENV
-          echo "CC=aarch64-unknown-linux-gnu-gcc" >> $GITHUB_ENV
-          echo "CXX=aarch64-unknown-linux-gnu-g++" >> $GITHUB_ENV
+          echo "CC=$(basename $cc_bin)" >> $GITHUB_ENV
+          echo "CXX=${{ github.workspace }}/hmos-cli/native/llvm/aarch64/bin/aarch64-unknown-linux-gnu-g++" >> $GITHUB_ENV
           echo "AR=aarch64-unknown-linux-gnu-ar" >> $GITHUB_ENV
           echo "RANLIB=aarch64-unknown-linux-gnu-ranlib" >> $GITHUB_ENV
           echo "CFLAGS=--sysroot=$SYSROOT -fPIC -O2" >> $GITHUB_ENV
-          echo "LDFLAGS=--sysroot=$SYSROOT -shared" >> $GITHUB_ENV
+          echo "CXXFLAGS=--sysroot=$SYSROOT -fPIC -O2" >> $GITHUB_ENV
+          echo "LDFLAGS=--sysroot=$SYSROOT" >> $GITHUB_ENV
+
+      - name: Debug toolchain
+        run: |
+          echo "CC=$CC"
+          echo "Path to CC: $(which $CC)"
+          echo "SYSROOT=$SYSROOT"
+          echo "Try compiling a test program..."
+          echo 'int main(){}' > test.c
+          $CC $CFLAGS test.c $LDFLAGS -o test.bin && file test.bin
 
       - name: Build libgs.so (Ghostscript)
         run: |
           git clone https://git.ghostscript.com/ghostpdl.git
           cd ghostpdl
 
-          # 如果你在 Secrets 里设置了 GS_VERSION，比如 "ghostpdl-9.55.0"，下面会切换到该 tag
           if [ -n "$GS_VERSION" ]; then
             git fetch --tags
             git checkout "$GS_VERSION"
@@ -78,7 +97,7 @@ jobs:
             --disable-fontconfig \
             --disable-compile-inits \
             --with-device-list="pclm" \
-            CC=$CC CXX=$CXX CFLAGS="$CFLAGS" LDFLAGS="$LDFLAGS"
+            CC=$CC CXX=$CXX CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS" LDFLAGS="$LDFLAGS"
           make -j$(nproc)
           make install DESTDIR=$(pwd)/build_output
 
@@ -87,7 +106,10 @@ jobs:
           cd wrapper
           mkdir -p build && cd build
           cmake .. \
-            -DCMAKE_TOOLCHAIN_FILE=$OHOS_NATIVE/build-tools/cmake/toolchain.cmake \
+            -DCMAKE_SYSTEM_NAME=Linux \
+            -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
+            -DCMAKE_C_COMPILER=$CC \
+            -DCMAKE_CXX_COMPILER=$CXX \
             -DCMAKE_FIND_ROOT_PATH=$SYSROOT
           make -j$(nproc)
 
