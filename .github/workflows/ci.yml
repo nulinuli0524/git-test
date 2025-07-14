@@ -9,13 +9,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      # HMOS CLI 下载地址（可在仓库 Secrets 里配置）
       CLI_URL: ${{ secrets.HMOS_CLI_URL }}
-
-      # 解压后 native 目录路径
       OHOS_NATIVE: ${{ github.workspace }}/hmos-cli/native
-
-      # 交叉编译配置
       SYSROOT: ${{ env.OHOS_NATIVE }}/sysroot
       PATH: ${{ env.OHOS_NATIVE }}/llvm/aarch64/bin:${{ env.OHOS_NATIVE }}/build-tools/bin:$PATH
       CC: aarch64-unknown-linux-gnu-gcc
@@ -27,7 +22,7 @@ jobs:
 
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
+        uses: actions/checkout@v4
 
       - name: Install system dependencies
         run: |
