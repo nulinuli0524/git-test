@@ -21,8 +21,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y \
             git unzip p7zip-full autoconf automake libtool \
-            cmake python3 pkg-config \
-            zlib1g-dev libpng-dev libtiff5-dev file
+            cmake python3 pkg-config zlib1g-dev libpng-dev libtiff5-dev file
 
       - name: Download & extract HMOS CLI
         run: |
@@ -67,24 +66,28 @@ jobs:
           make -j$(nproc)
           make install DESTDIR=$(pwd)/build_output
 
-      - name: Debug Ghostscript include tree
+      - name: Debug Ghostscript psi tree
         run: |
-          echo "=== 包含 iapi.h、imemory.h 的 psi 目录 ==="
-          find ghostpdl/build_output/usr/local/ghostscript/psi -type f | sed 's/^/→ /'
+          echo "=== psi 目录结构 ==="
+          find ghostpdl/build_output/usr/local/ghostscript/psi -maxdepth 2 | sed 's/^/→ /'
 
       - name: Build pdf2pclm.so (Wrapper)
         run: |
           cd wrapper
-          mkdir -p build && cd build
+          # 清理旧缓存
+          rm -rf build
+          mkdir build && cd build
+
+          # 硬加 psi include 路径
           cmake .. \
             -DGS_ROOT=${{ github.workspace }}/ghostpdl/build_output/usr/local/ghostscript \
             -DCMAKE_SYSROOT=$SYSROOT \
             -DCMAKE_SYSTEM_NAME=Linux \
             -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
             -DCMAKE_C_COMPILER=$CC \
-            -DCMAKE_C_FLAGS="$CFLAGS" \
-            -DCMAKE_CXX_FLAGS="$CXXFLAGS" \
-            -DCMAKE_SHARED_LINKER_FLAGS="$LDFLAGS"
+            -DCMAKE_C_FLAGS="$CFLAGS -I${{ github.workspace }}/ghostpdl/build_output/usr/local/ghostscript/psi" \
+            -DCMAKE_SHARED_LINKER_FLAGS="$LDFLAGS" \
+            -DCMAKE_FIND_ROOT_PATH="$SYSROOT"
           make -j$(nproc)
 
       - name: Upload artifacts
