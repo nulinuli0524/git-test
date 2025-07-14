@@ -1,6 +1,8 @@
 name: Build PDF→PCLm Libraries
 
-on: [ push, pull_request ]
+on:
+  push:
+  pull_request:
 
 jobs:
   build:
@@ -14,11 +16,12 @@ jobs:
 
       - name: Install system dependencies
         run: |
-          sudo apt update
-          sudo apt install -y git autoconf automake libtool \
-                             cmake python3 pkg-config \
-                             zlib1g-dev libpng-dev libtiff5-dev \
-                             bsdtar p7zip-full
+          sudo apt-get update
+          sudo apt-get install -y \
+            git autoconf automake libtool \
+            cmake python3 pkg-config \
+            zlib1g-dev libpng-dev libtiff5-dev \
+            libarchive-tools p7zip-full
 
       - name: Download & unpack HMOS CLI
         run: |
@@ -31,7 +34,6 @@ jobs:
             echo "bsdtar failed, fallback to 7z"
             mkdir hmos-cli
             7z x hmos-cli.tar.gz -ohmos-cli
-            # 7z 会把内容直接解到 hmos-cli/
           fi
 
           # 如果解出的目录不是 hmos-cli，就重命名
