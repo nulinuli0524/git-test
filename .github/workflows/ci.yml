@@ -20,11 +20,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y \
-            git unzip p7zip-full \
-            autoconf automake libtool \
+            git unzip p7zip-full autoconf automake libtool \
             cmake python3 pkg-config \
-            zlib1g-dev libpng-dev libtiff5-dev \
-            file
+            zlib1g-dev libpng-dev libtiff5-dev file
 
       - name: Download HMOS CLI
         run: wget -O hmos-cli.zip "${CLI_URL}"
@@ -37,11 +35,11 @@ jobs:
           root=${native_dir%/native}
           mv "$root" hmos-cli
 
-      - name: Set up cross-compile env
+      - name: Locate & export toolchain
         run: |
           tool_bin=$(find hmos-cli/native/llvm -type f -executable -name clang | head -n1)
           tool_dir=$(dirname "$tool_bin")
-          echo "PATH=${tool_dir}:$PWD/hmos-cli/native/build-tools/bin:${PATH}" >> $GITHUB_ENV
+          echo "PATH=${tool_dir}:$PWD/hmos-cli/native/build-tools/bin:$PATH" >> $GITHUB_ENV
           echo "CC=clang"   >> $GITHUB_ENV
           echo "CXX=clang++">> $GITHUB_ENV
           echo "AR=llvm-ar" >> $GITHUB_ENV
@@ -84,6 +82,7 @@ jobs:
           cd wrapper
           mkdir build && cd build
           cmake .. \
+            -DGS_ROOT=${{ github.workspace }}/ghostpdl/build_output/usr/local/ghostscript \
             -DCMAKE_SYSTEM_NAME=Linux \
             -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
             -DCMAKE_C_COMPILER=$CC \
