@@ -78,14 +78,13 @@ jobs:
           mkdir -p build && cd build
           cmake .. \
             -DGS_ROOT=${{ github.workspace }}/ghostpdl/build_output/usr/local/ghostscript \
+            -DCMAKE_SYSROOT=$SYSROOT \
             -DCMAKE_SYSTEM_NAME=Linux \
             -DCMAKE_SYSTEM_PROCESSOR=aarch64 \
             -DCMAKE_C_COMPILER=$CC \
-            -DCMAKE_CXX_COMPILER=$CXX \
             -DCMAKE_C_FLAGS="$CFLAGS" \
             -DCMAKE_CXX_FLAGS="$CXXFLAGS" \
-            -DCMAKE_SHARED_LINKER_FLAGS="$LDFLAGS" \
-            -DCMAKE_FIND_ROOT_PATH="$SYSROOT"
+            -DCMAKE_SHARED_LINKER_FLAGS="$LDFLAGS"
           make -j$(nproc)
 
       - name: Upload artifacts
