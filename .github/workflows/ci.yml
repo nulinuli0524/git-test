@@ -7,8 +7,8 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     env:
+      # 填入你设置在仓库 Secrets 里的 HMOS CLI 直链地址
       CLI_URL: "https://contentcenter-vali-drcn.dbankcdn.cn/pvt_2/DeveloperAlliance_package_901_9/f6/v3/s4KXxlxTQBamLt4g2wT0Hg/commandline-tools-linux-x64-5.1.0.840.zip?HW-CC-KV=V1&HW-CC-Date=20250714T071922Z&HW-CC-Expire=7200&HW-CC-Sign=0674BDEFBA94EE12AFF3F869D9A66610850D7E1949BE37E1ABD2AD01AE61AE03"
 
     steps:
@@ -19,13 +19,16 @@ jobs:
         run: |
           sudo apt update
           sudo apt install -y git autoconf automake libtool \
-                              cmake python3 pkg-config \
-                              zlib1g-dev libpng-dev libtiff5-dev
+                             cmake python3 pkg-config \
+                             zlib1g-dev libpng-dev libtiff5-dev
 
-      - name: Download HMOS Command Line Tools
+      - name: Download & unpack HMOS CLI
         run: |
           wget -O hmos-cli.tar.gz "${CLI_URL}"
-          tar -zxf hmos-cli.tar.gz -C ${{ github.workspace }}
+          # zcat 可正确展开包含多段 gzip 流的包
+          zcat hmos-cli.tar.gz | tar xf -
+          # 解压后目录形如 command-line-tools-linux-*, 统一重命名
+          mv command-line-tools-linux-* hmos-cli
 
       - name: Set up cross-compile environment
         run: |
@@ -39,7 +42,7 @@ jobs:
           echo "CFLAGS=--sysroot=${{ github.workspace }}/hmos-cli/native/sysroot -fPIC -O2" >> $GITHUB_ENV
           echo "LDFLAGS=--sysroot=${{ github.workspace }}/hmos-cli/native/sysroot -shared" >> $GITHUB_ENV
 
-      - name: Verify native 目录
+      - name: Verify native directory
         run: |
           test -d "$OHOS_NATIVE/sysroot/usr/include"
           test -x "$OHOS_NATIVE/llvm/aarch64/bin/gcc"
