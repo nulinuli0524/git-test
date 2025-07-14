@@ -1,14 +1,11 @@
 name: Build PDF→PCLm Libraries
 
-on:
-  push:
-  pull_request:
+on: [ push, pull_request ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
     env:
-      # 填入你设置在仓库 Secrets 里的 HMOS CLI 直链地址
       CLI_URL: "https://contentcenter-vali-drcn.dbankcdn.cn/pvt_2/DeveloperAlliance_package_901_9/f6/v3/s4KXxlxTQBamLt4g2wT0Hg/commandline-tools-linux-x64-5.1.0.840.zip?HW-CC-KV=V1&HW-CC-Date=20250714T071922Z&HW-CC-Expire=7200&HW-CC-Sign=0674BDEFBA94EE12AFF3F869D9A66610850D7E1949BE37E1ABD2AD01AE61AE03"
 
     steps:
@@ -20,15 +17,27 @@ jobs:
           sudo apt update
           sudo apt install -y git autoconf automake libtool \
                              cmake python3 pkg-config \
-                             zlib1g-dev libpng-dev libtiff5-dev
+                             zlib1g-dev libpng-dev libtiff5-dev \
+                             bsdtar p7zip-full
 
       - name: Download & unpack HMOS CLI
         run: |
           wget -O hmos-cli.tar.gz "${CLI_URL}"
-          # zcat 可正确展开包含多段 gzip 流的包
-          zcat hmos-cli.tar.gz | tar xf -
-          # 解压后目录形如 command-line-tools-linux-*, 统一重命名
-          mv command-line-tools-linux-* hmos-cli
+
+          # 优先用 bsdtar 解多段 gzip + tar
+          if bsdtar -tf hmos-cli.tar.gz &>/dev/null; then
+            bsdtar -xf hmos-cli.tar.gz
+          else
+            echo "bsdtar failed, fallback to 7z"
+            mkdir hmos-cli
+            7z x hmos-cli.tar.gz -ohmos-cli
+            # 7z 会把内容直接解到 hmos-cli/
+          fi
+
+          # 如果解出的目录不是 hmos-cli，就重命名
+          if [ ! -d hmos-cli ]; then
+            mv command-line-tools-linux-* hmos-cli
+          fi
 
       - name: Set up cross-compile environment
         run: |
