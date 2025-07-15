@@ -8,7 +8,7 @@ jobs:
   build-libgs:
     runs-on: ubuntu-latest
     env:
-      CLI_URL: "https://…commandline-tools-linux-x64-5.1.0.840.zip?…"
+      CLI_URL: "https://contentcenter-vali-drcn.dbankcdn.cn/pvt_2/DeveloperAlliance_package_901_9/f6/v3/s4KXxlxTQBamLt4g2wT0Hg/commandline-tools-linux-x64-5.1.0.840.zip?HW-CC-KV=V1&HW-CC-Date=20250715T014328Z&HW-CC-Expire=7200&HW-CC-Sign=9EFA064F2FF5BA4CD07860A26DEBC9FC8163F5B052F85AA429A5898CE5A03E87"
       GS_VERSION: ${{ secrets.GS_VERSION }}
 
     steps:
