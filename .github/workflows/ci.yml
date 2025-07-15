@@ -8,28 +8,27 @@ jobs:
   build-libgs:
     runs-on: ubuntu-latest
     env:
-      CLI_URL: "https://contentcenter-vali-drcn.dbankcdn.cn/pvt_2/DeveloperAlliance_package_901_9/f6/v3/s4KXxlxTQBamLt4g2wT0Hg/commandline-tools-linux-x64-5.1.0.840.zip?HW-CC-KV=V1&HW-CC-Date=20250714T092621Z&HW-CC-Expire=7200&HW-CC-Sign=43C91A44AF943C8DCC41AE5DBA2CF54CE6A3EE23FA7DCAA91A67384C2C3E2FB1"
+      CLI_URL: "https://…commandline-tools-linux-x64-5.1.0.840.zip?…"
       GS_VERSION: ${{ secrets.GS_VERSION }}
 
     steps:
-      - name: 📥 Checkout code
+      - name: 📥 Checkout
         uses: actions/checkout@v4
 
-      - name: 🛠️ Install build dependencies
+      - name: 🛠 Install dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             git unzip p7zip-full autoconf automake libtool \
             cmake pkg-config zlib1g-dev libpng-dev libtiff5-dev
 
-      - name: 📦 Download & extract HMOS CLI
+      - name: 📦 Download & setup HMOS CLI
         run: |
           wget -O hmos-cli.zip "${CLI_URL}"
           unzip -q hmos-cli.zip -d hmos
           native_dir=$(find hmos -type d -name native | head -n1)
           llvm_bin=$(find "$native_dir" -type f -name clang | head -n1)
           llvm_dir=$(dirname "$llvm_bin")
-
           echo "PATH=$llvm_dir:$PWD/hmos/native/build-tools/bin:$PATH" >> $GITHUB_ENV
           echo "CC=clang" >> $GITHUB_ENV
           echo "CXX=clang++" >> $GITHUB_ENV
@@ -40,7 +39,7 @@ jobs:
           echo "CXXFLAGS=--sysroot=$SYSROOT -fPIC -O2" >> $GITHUB_ENV
           echo "LDFLAGS=--sysroot=$SYSROOT" >> $GITHUB_ENV
 
-      - name: 🔧 Build libgs.so with Ghostscript
+      - name: 🔧 Build libgs.so
         run: |
           git clone https://git.ghostscript.com/ghostpdl.git
           cd ghostpdl
@@ -54,20 +53,18 @@ jobs:
             --disable-fontconfig \
             --disable-compile-inits \
             --with-device-list=pclm \
-            --prefix=$(pwd)/build_output/usr/local \
             CC=$CC CXX=$CXX \
             CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS" LDFLAGS="$LDFLAGS"
           make -j$(nproc)
           make install DESTDIR=$(pwd)/build_output
 
-      - name: 📂 Locate and verify built libgs.so
+      - name: 📂 Debug install tree
         run: |
-          echo "🔍 Searching for libgs.so..."
-          find ghostpdl/build_output -name libgs.so | sed 's/^/→ /'
+          echo "=== build_output/usr/local/lib ==="
+          find ghostpdl/build_output/usr/local/lib -type f | sed 's/^/→ /'
 
-      - name: 🚚 Upload libgs.so artifact
+      - name: 🚚 Upload libgs.so
         uses: actions/upload-artifact@v4
         with:
           name: ghostscript-libs
-          path: |
-            ghostpdl/build_output/**/libgs.so
+          path: ghostpdl/build_output/usr/local/lib/libgs.so
