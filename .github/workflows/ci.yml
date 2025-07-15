@@ -7,45 +7,53 @@ on:
 jobs:
   build-libgs:
     runs-on: ubuntu-latest
+
     env:
+      # HarmonyOS CLI 下载地址（替换成你的有效链接）
       CLI_URL: "https://contentcenter-vali-drcn.dbankcdn.cn/pvt_2/DeveloperAlliance_package_901_9/f6/v3/s4KXxlxTQBamLt4g2wT0Hg/commandline-tools-linux-x64-5.1.0.840.zip?HW-CC-KV=V1&HW-CC-Date=20250715T014328Z&HW-CC-Expire=7200&HW-CC-Sign=9EFA064F2FF5BA4CD07860A26DEBC9FC8163F5B052F85AA429A5898CE5A03E87"
       GS_VERSION: ${{ secrets.GS_VERSION }}
 
     steps:
-      - name: 📥 Checkout
+      - name: Checkout source
         uses: actions/checkout@v4
 
-      - name: 🛠 Install dependencies
+      - name: Install host dependencies
         run: |
           sudo apt-get update
           sudo apt-get install -y \
             git unzip p7zip-full autoconf automake libtool \
             cmake pkg-config zlib1g-dev libpng-dev libtiff5-dev
 
-      - name: 📦 Download & setup HMOS CLI
+      - name: Download & extract HarmonyOS CLI
         run: |
           wget -O hmos-cli.zip "${CLI_URL}"
           unzip -q hmos-cli.zip -d hmos
+          # 找到 native toolchain 和 sysroot
           native_dir=$(find hmos -type d -name native | head -n1)
-          llvm_bin=$(find "$native_dir" -type f -name clang | head -n1)
-          llvm_dir=$(dirname "$llvm_bin")
-          echo "PATH=$llvm_dir:$PWD/hmos/native/build-tools/bin:$PATH" >> $GITHUB_ENV
-          echo "CC=clang" >> $GITHUB_ENV
-          echo "CXX=clang++" >> $GITHUB_ENV
-          echo "AR=llvm-ar" >> $GITHUB_ENV
+          clang_bin=$(find "$native_dir" -type f -name clang | head -n1)
+          tool_dir=$(dirname "$clang_bin")
+          echo "PATH=${tool_dir}:${PWD}/hmos/native/build-tools/bin:${PATH}" >> $GITHUB_ENV
+          echo "CC=clang"           >> $GITHUB_ENV
+          echo "CXX=clang++"        >> $GITHUB_ENV
+          echo "AR=llvm-ar"         >> $GITHUB_ENV
           echo "RANLIB=llvm-ranlib" >> $GITHUB_ENV
-          echo "SYSROOT=$PWD/hmos/native/sysroot" >> $GITHUB_ENV
-          echo "CFLAGS=--sysroot=$SYSROOT -fPIC -O2" >> $GITHUB_ENV
-          echo "CXXFLAGS=--sysroot=$SYSROOT -fPIC -O2" >> $GITHUB_ENV
-          echo "LDFLAGS=--sysroot=$SYSROOT" >> $GITHUB_ENV
+          echo "SYSROOT=${PWD}/hmos/native/sysroot" >> $GITHUB_ENV
+          echo "CFLAGS=--sysroot=$SYSROOT -fPIC -O2"    >> $GITHUB_ENV
+          echo "CXXFLAGS=--sysroot=$SYSROOT -fPIC -O2"  >> $GITHUB_ENV
+          echo "LDFLAGS=--sysroot=$SYSROOT"             >> $GITHUB_ENV
 
-      - name: 🔧 Build libgs.so
+      - name: Clone Ghostscript source
         run: |
           git clone https://git.ghostscript.com/ghostpdl.git
           cd ghostpdl
           if [ -n "$GS_VERSION" ]; then
-            git fetch --tags && git checkout "$GS_VERSION"
+            git fetch --tags
+            git checkout "$GS_VERSION"
           fi
+
+      - name: Configure & build libgs.so
+        run: |
+          cd ghostpdl
           ./autogen.sh
           ./configure \
             --host=aarch64-unknown-linux-gnu \
@@ -53,18 +61,22 @@ jobs:
             --disable-fontconfig \
             --disable-compile-inits \
             --with-device-list=pclm \
-            CC=$CC CXX=$CXX \
-            CFLAGS="$CFLAGS" CXXFLAGS="$CXXFLAGS" LDFLAGS="$LDFLAGS"
+            --prefix=$(pwd)/build_output \
+            CC=$CC \
+            CXX=$CXX \
+            CFLAGS="$CFLAGS" \
+            CXXFLAGS="$CXXFLAGS" \
+            LDFLAGS="$LDFLAGS"
           make -j$(nproc)
-          make install DESTDIR=$(pwd)/build_output
+          make install
 
-      - name: 📂 Debug install tree
+      - name: Debug install tree
         run: |
-          echo "=== build_output/usr/local/lib ==="
-          find ghostpdl/build_output/usr/local/lib -type f | sed 's/^/→ /'
+          echo "Installed under ghostpdl/build_output:"
+          find ghostpdl/build_output -maxdepth 3 | sed 's/^/→ /'
 
-      - name: 🚚 Upload libgs.so
+      - name: Upload libgs.so
         uses: actions/upload-artifact@v4
         with:
           name: ghostscript-libs
-          path: ghostpdl/build_output/usr/local/lib/libgs.so
+          path: ghostpdl/build_output/lib/libgs.so
