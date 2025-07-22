@@ -67,7 +67,7 @@ jobs:
           make -j$(nproc)
           make install
 
-      - name: Debug: 列出 build_output 目录
+      - name: Debug
         run: |
           echo "=== build_output 目录结构 ==="
           find ghostpdl/build_output -maxdepth 3
