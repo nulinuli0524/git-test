@@ -86,7 +86,7 @@ jobs:
           make -j$(nproc)
           make install
 
-      - name: Debug: list libgs.so
+      - name: Debug
         run: |
           echo "=== libgs.so files ==="
           find ghostpdl/build_output -type f -name "libgs.so*" || echo "NOT FOUND"
