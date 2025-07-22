@@ -54,6 +54,8 @@ jobs:
           ./autogen.sh
           ./configure \
             --host=aarch64-unknown-linux-gnu \
+            --enable-shared \
+            --disable-static \
             --disable-gtk \
             --disable-fontconfig \
             --disable-compile-inits \
@@ -69,8 +71,8 @@ jobs:
 
       - name: Debug
         run: |
-          echo "=== build_output 目录结构 ==="
-          find ghostpdl/build_output -maxdepth 3
+           echo "=== libgs.so 位于 ==="
+           find ghostpdl/build_output -type f -name "libgs.so*" || echo "未找到 libgs.so"
 
       - name: Upload libgs.so
         uses: actions/upload-artifact@v4
