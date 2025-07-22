@@ -7,10 +7,8 @@ on:
 jobs:
   build-libgs:
     runs-on: ubuntu-latest
-
     env:
-      # HarmonyOS CLI 下载地址（替换成你的有效链接）
-      CLI_URL: "https://contentcenter-vali-drcn.dbankcdn.cn/pvt_2/DeveloperAlliance_package_901_9/f6/v3/s4KXxlxTQBamLt4g2wT0Hg/commandline-tools-linux-x64-5.1.0.840.zip?HW-CC-KV=V1&HW-CC-Date=20250715T014328Z&HW-CC-Expire=7200&HW-CC-Sign=9EFA064F2FF5BA4CD07860A26DEBC9FC8163F5B052F85AA429A5898CE5A03E87"
+      CLI_URL: "https://contentcenter-vali-drcn.dbankcdn.cn/pvt_2/DeveloperAlliance_package_901_9/43/v3/o_Y4Yse1Q92FsF7m4sATVQ/commandline-tools-linux-x64-5.1.1.823.zip?HW-CC-KV=V1&HW-CC-Date=20250722T091817Z&HW-CC-Expire=7200&HW-CC-Sign=24DCDC27AC7C34F30739A2A028EC502E0D55B07F6576B2D6A5E2F56FA55B5375"
       GS_VERSION: ${{ secrets.GS_VERSION }}
 
     steps:
@@ -28,7 +26,6 @@ jobs:
         run: |
           wget -O hmos-cli.zip "${CLI_URL}"
           unzip -q hmos-cli.zip -d hmos
-          # 找到 native toolchain 和 sysroot
           native_dir=$(find hmos -type d -name native | head -n1)
           clang_bin=$(find "$native_dir" -type f -name clang | head -n1)
           tool_dir=$(dirname "$clang_bin")
@@ -70,13 +67,15 @@ jobs:
           make -j$(nproc)
           make install
 
-      - name: Debug install tree
+      - name: Debug: 列出 build_output 目录
         run: |
-          echo "Installed under ghostpdl/build_output:"
-          find ghostpdl/build_output -maxdepth 3 | sed 's/^/→ /'
+          echo "=== build_output 目录结构 ==="
+          find ghostpdl/build_output -maxdepth 3
 
       - name: Upload libgs.so
         uses: actions/upload-artifact@v4
         with:
           name: ghostscript-libs
-          path: ghostpdl/build_output/lib/libgs.so
+          # 上传整个 lib 目录，确保 libgs.so 能被包含
+          path: ghostpdl/build_output/lib/
+
