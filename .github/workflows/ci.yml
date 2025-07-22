@@ -8,7 +8,8 @@ jobs:
   build-libgs:
     runs-on: ubuntu-latest
     env:
-      CLI_URL:'https://contentcenter-vali-drcn.dbankcdn.cn/pvt_2/DeveloperAlliance_package_901_9/43/v3/o_Y4Yse1Q92FsF7m4sATVQ/commandline-tools-linux-x64-5.1.1.823.zip?HW-CC-KV=V1&HW-CC-Date=20250722T091817Z&HW-CC-Expire=7200&HW-CC-Sign=24DCDC27AC7C34F30739A2A028EC502E0D55B07F6576B2D6A5E2F56FA55B5375'
+      CLI_URL: 'https://contentcenter-vali-drcn.dbankcdn.cn/pvt_2/DeveloperAlliance_package_901_9/43/v3/o_Y4Yse1Q92FsF7m4sATVQ/commandline-tools-linux-x64-5.1.1.823.zip?HW-CC-KV=V1&HW-CC-Date=20250722T091817Z&HW-CC-Expire=7200&HW-CC-Sign=24DCDC27AC7C34F30739A2A028EC502E0D55B07F6576B2D6A5E2F56FA55B5375'
+      GS_VERSION: ${{ secrets.GS_VERSION }}
 
 
     steps:
