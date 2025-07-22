@@ -9,8 +9,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       CLI_URL: 'https://contentcenter-vali-drcn.dbankcdn.cn/pvt_2/DeveloperAlliance_package_901_9/43/v3/o_Y4Yse1Q92FsF7m4sATVQ/commandline-tools-linux-x64-5.1.1.823.zip?HW-CC-KV=V1&HW-CC-Date=20250722T091817Z&HW-CC-Expire=7200&HW-CC-Sign=24DCDC27AC7C34F30739A2A028EC502E0D55B07F6576B2D6A5E2F56FA55B5375'
-      GS_VERSION: ${{ secrets.GS_VERSION }}
-
+      GS_VERSION: "${{ secrets.GS_VERSION }}"
 
     steps:
       - name: Checkout source
@@ -23,45 +22,55 @@ jobs:
             git unzip p7zip-full autoconf automake libtool \
             cmake pkg-config zlib1g-dev libpng-dev libtiff5-dev
 
-      - name: Download & extract HarmonyOS CLI & export toolchain env
+      - name: Download & extract HarmonyOS CLI
         run: |
           wget -O hmos-cli.zip "${CLI_URL}"
           unzip -q hmos-cli.zip -d hmos
 
+      - name: Setup cross-compiler in PATH & env vars
+        run: |
           native_dir=$(find hmos -type d -name native | head -n1)
-          clang_bin=$(find "$native_dir" -type f -name clang | head -n1)
-          tool_dir=$(dirname "$clang_bin")
+          tool_dir=$(dirname "$(find "$native_dir" -type f -name clang | head -n1)")
 
-          # 将交叉编译工具链加入 PATH（保留原有路径）
-          echo "${tool_dir}" >> $GITHUB_PATH
+          # Add cross-compiler bins without wiping out /usr/bin
+          echo "${tool_dir}"       >> $GITHUB_PATH
           echo "${PWD}/hmos/native/build-tools/bin" >> $GITHUB_PATH
 
-          # 导出编译工具
-          echo "CC=clang"           >> $GITHUB_ENV
-          echo "CXX=clang++"        >> $GITHUB_ENV
+          # Export sysroot
+          echo "SYSROOT=${PWD}/hmos/native/sysroot" >> $GITHUB_ENV
+
+          # Point CC/CXX to clang with proper target and sysroot
+          echo 'CC=clang --target=aarch64-unknown-linux-gnu --sysroot=${SYSROOT}'   >> $GITHUB_ENV
+          echo 'CXX=clang++ --target=aarch64-unknown-linux-gnu --sysroot=${SYSROOT}' >> $GITHUB_ENV
+
+          # AR/RANLIB for aarch64
           echo "AR=llvm-ar"         >> $GITHUB_ENV
           echo "RANLIB=llvm-ranlib" >> $GITHUB_ENV
 
-          # 导出 sysroot 和编译/链接参数
-          echo "SYSROOT=${PWD}/hmos/native/sysroot"                     >> $GITHUB_ENV
-          echo "CFLAGS=--sysroot=${PWD}/hmos/native/sysroot -fPIC -O2"   >> $GITHUB_ENV
-          echo "CXXFLAGS=--sysroot=${PWD}/hmos/native/sysroot -fPIC -O2" >> $GITHUB_ENV
-          echo "LDFLAGS=--sysroot=${PWD}/hmos/native/sysroot"            >> $GITHUB_ENV
+          # Minimal flags; sysroot is already in CC/CXX
+          echo 'CFLAGS=-fPIC -O2'    >> $GITHUB_ENV
+          echo 'CXXFLAGS=-fPIC -O2'  >> $GITHUB_ENV
+          echo 'LDFLAGS='            >> $GITHUB_ENV
 
       - name: Clone Ghostscript source
         run: |
           git clone https://git.ghostscript.com/ghostpdl.git
           cd ghostpdl
-          if [ -n "$GS_VERSION" ]; then
+          if [ -n "${GS_VERSION}" ]; then
             git fetch --tags
-            git checkout "$GS_VERSION"
+            git checkout "${GS_VERSION}"
           fi
+
+      - name: Regenerate configure scripts
+        run: |
+          cd ghostpdl
+          autoreconf -fiv
 
       - name: Configure & build libgs.so
         run: |
           cd ghostpdl
-          ./autogen.sh
           ./configure \
+            --build=x86_64-pc-linux-gnu \
             --host=aarch64-unknown-linux-gnu \
             --enable-shared \
             --disable-static \
@@ -70,24 +79,20 @@ jobs:
             --disable-compile-inits \
             --with-device-list=pclm \
             --prefix=$(pwd)/build_output \
-            CC=$CC \
-            CXX=$CXX \
-            AR=$AR \
-            RANLIB=$RANLIB \
-            CFLAGS="$CFLAGS" \
-            CXXFLAGS="$CXXFLAGS" \
-            LDFLAGS="$LDFLAGS"
+            CC="${CC}" CXX="${CXX}" \
+            AR="${AR}" RANLIB="${RANLIB}" \
+            CFLAGS="${CFLAGS}" CXXFLAGS="${CXXFLAGS}" LDFLAGS="${LDFLAGS}"
 
           make -j$(nproc)
           make install
 
-      - name: Debug
+      - name: Debug: list libgs.so
         run: |
-          echo "=== libgs.so 位于 ==="
-          find ghostpdl/build_output -type f -name "libgs.so*" || echo "未找到 libgs.so"
+          echo "=== libgs.so files ==="
+          find ghostpdl/build_output -type f -name "libgs.so*" || echo "NOT FOUND"
 
       - name: Upload libgs.so
         uses: actions/upload-artifact@v4
         with:
           name: ghostscript-libs
-          path: ghostpdl/build_output
+          path: ghostpdl/build_output/lib/libgs.so
