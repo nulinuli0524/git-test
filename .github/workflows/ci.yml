@@ -8,8 +8,7 @@ jobs:
   build-libgs:
     runs-on: ubuntu-latest
     env:
-      # 把 CLI_URL 和 GS_VERSION 放在 job env 里  
-      CLI_URL: 'https://contentcenter-vali-drcn.dbankcdn.cn/pvt_2/DeveloperAlliance_package_901_9/43/v3/o_Y4Yse1Q92FsF7m4sATVQ/commandline-tools-linux-x64-5.1.1.823.zip?HW-CC-KV=V1&HW-CC-Date=20250722T091817Z&HW-CC-Expire=7200&HW-CC-Sign=24DCDC27AC7C34F30739A2A028EC502E0D55B07F6576B2D6A5E2F56FA55B5375'
+      CLI_URL:'https://contentcenter-vali-drcn.dbankcdn.cn/pvt_2/DeveloperAlliance_package_901_9/43/v3/o_Y4Yse1Q92FsF7m4sATVQ/commandline-tools-linux-x64-5.1.1.823.zip?HW-CC-KV=V1&HW-CC-Date=20250722T091817Z&HW-CC-Expire=7200&HW-CC-Sign=24DCDC27AC7C34F30739A2A028EC502E0D55B07F6576B2D6A5E2F56FA55B5375'
       GS_VERSION: ${{ secrets.GS_VERSION }}
 
     steps:
@@ -32,20 +31,21 @@ jobs:
           clang_bin=$(find "$native_dir" -type f -name clang | head -n1)
           tool_dir=$(dirname "$clang_bin")
 
-          # write dynamic PATH so it prepends our cross-compiler
-          echo "PATH=${tool_dir}:${PWD}/hmos/native/build-tools/bin:\$PATH" >> $GITHUB_ENV
+          # 将交叉编译工具链加入 PATH（保留原有路径）
+          echo "${tool_dir}" >> $GITHUB_PATH
+          echo "${PWD}/hmos/native/build-tools/bin" >> $GITHUB_PATH
 
-          # toolchain
+          # 导出编译工具
           echo "CC=clang"           >> $GITHUB_ENV
           echo "CXX=clang++"        >> $GITHUB_ENV
           echo "AR=llvm-ar"         >> $GITHUB_ENV
           echo "RANLIB=llvm-ranlib" >> $GITHUB_ENV
 
-          # sysroot & flags — expand $PWD now so next steps see real paths
-          echo "SYSROOT=${PWD}/hmos/native/sysroot"                      >> $GITHUB_ENV
-          echo "CFLAGS=--sysroot=${PWD}/hmos/native/sysroot -fPIC -O2"    >> $GITHUB_ENV
-          echo "CXXFLAGS=--sysroot=${PWD}/hmos/native/sysroot -fPIC -O2"  >> $GITHUB_ENV
-          echo "LDFLAGS=--sysroot=${PWD}/hmos/native/sysroot"             >> $GITHUB_ENV
+          # 导出 sysroot 和编译/链接参数
+          echo "SYSROOT=${PWD}/hmos/native/sysroot"                     >> $GITHUB_ENV
+          echo "CFLAGS=--sysroot=${PWD}/hmos/native/sysroot -fPIC -O2"   >> $GITHUB_ENV
+          echo "CXXFLAGS=--sysroot=${PWD}/hmos/native/sysroot -fPIC -O2" >> $GITHUB_ENV
+          echo "LDFLAGS=--sysroot=${PWD}/hmos/native/sysroot"            >> $GITHUB_ENV
 
       - name: Clone Ghostscript source
         run: |
@@ -60,7 +60,6 @@ jobs:
         run: |
           cd ghostpdl
           ./autogen.sh
-
           ./configure \
             --host=aarch64-unknown-linux-gnu \
             --enable-shared \
@@ -90,4 +89,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ghostscript-libs
-          path: ghostpdl/build_output/lib/libgs.so
+          path: ghostpdl/build_output
